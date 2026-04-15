@@ -456,6 +456,7 @@ export default function CashflowPage() {
       <Drawer open={!!drawer} onClose={() => setDrawer(null)} txns={drawerTxns}
         title={drawer?.title||""} weekLabel={drawer?periodLabel(drawer.week,viewPeriod):""} entity={entity}
         overrides={overrides} excluded={excluded}
+        reportingCurrency={reportingCurrency} reportingRate={reportingRate}
         onReclassify={setCatOverride} onExclude={toggleExclude} />
     </div>
   );

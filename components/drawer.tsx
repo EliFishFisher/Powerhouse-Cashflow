@@ -7,21 +7,24 @@ import type { Category } from "@/lib/constants";
 import type { Transaction } from "@/lib/types";
 
 interface Props {
-  open:            boolean;
-  onClose:         () => void;
-  txns:            Transaction[];
-  title:           string;
-  weekLabel:       string;
-  entity:          string;
-  overrides?:      Record<string, Category>;
-  onReclassify?:   (uid: string, cat: Category) => void;
-  onExclude?:      (uid: string) => void;
-  excluded?:       Set<string>;
+  open:               boolean;
+  onClose:            () => void;
+  txns:               Transaction[];
+  title:              string;
+  weekLabel:          string;
+  entity:             string;
+  overrides?:         Record<string, Category>;
+  onReclassify?:      (uid: string, cat: Category) => void;
+  onExclude?:         (uid: string) => void;
+  excluded?:          Set<string>;
+  reportingCurrency?: string;
+  reportingRate?:     number;
 }
 
 export function Drawer({
   open, onClose, txns, title, weekLabel, entity,
   overrides = {}, onReclassify, onExclude, excluded = new Set(),
+  reportingCurrency = "USD", reportingRate = 1,
 }: Props) {
   const [selected, setSelected] = useState<Transaction | null>(null);
   const [catDraft,  setCatDraft]  = useState<Category>("other");
@@ -59,9 +62,10 @@ export function Drawer({
     setSelected(null);
   }, [selected, onExclude]);
 
-  const totalIn  = txns.filter(t => t.net > 0).reduce((s, t) => s + t.net, 0);
-  const totalOut = txns.filter(t => t.net < 0).reduce((s, t) => s + t.net, 0);
-  const net      = txns.reduce((s, t) => s + t.net, 0);
+  // Use netUSD for cross-currency accuracy (e.g. EUR + ILS + USD transactions in same drawer)
+  const totalIn  = txns.filter(t => t.net > 0).reduce((s, t) => s + (t.netUSD ?? t.net), 0);
+  const totalOut = txns.filter(t => t.net < 0).reduce((s, t) => s + (t.netUSD ?? t.net), 0);
+  const net      = txns.reduce((s, t) => s + (t.netUSD ?? t.net), 0);
 
   return (
     <>
@@ -90,7 +94,7 @@ export function Drawer({
                     <span>·</span>
                     <span>🏢 {entity}</span>
                     <span>·</span>
-                    <span className="font-semibold text-blue-400">USD</span>
+                    <span className="font-semibold text-blue-400">{reportingCurrency}</span>
                   </div>
                 </div>
                 <button onClick={onClose}
@@ -99,16 +103,16 @@ export function Drawer({
                 </button>
               </div>
 
-              {/* KPI mini-cards */}
+              {/* KPI mini-cards — totals in reporting currency (via netUSD) */}
               <div className="grid grid-cols-3 gap-1.5">
                 {[
-                  { l: "Inflows",  v: `+${fmt(totalIn)}`,               c: "#22c55e", bg: "rgba(34,197,94,0.15)"  },
-                  { l: "Outflows", v: `(${fmt(Math.abs(totalOut))})`,   c: "#f87171", bg: "rgba(239,68,68,0.15)" },
-                  { l: "Net",      v: (net >= 0 ? "+" : "") + fmt(net), c: net >= 0 ? "#22c55e" : "#f87171", bg: net >= 0 ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)" },
+                  { l: "Inflows",  v: `+${fmt(totalIn, reportingRate)}`,               c: "#22c55e", bg: "rgba(34,197,94,0.15)"  },
+                  { l: "Outflows", v: `(${fmt(Math.abs(totalOut), reportingRate)})`,   c: "#f87171", bg: "rgba(239,68,68,0.15)" },
+                  { l: "Net",      v: (net >= 0 ? "+" : "") + fmt(net, reportingRate), c: net >= 0 ? "#22c55e" : "#f87171", bg: net >= 0 ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)" },
                 ].map(s => (
                   <div key={s.l} className="rounded-lg px-3 py-1.5 text-center" style={{ background: s.bg }}>
                     <div className="text-[9px] font-semibold uppercase text-slate-400">{s.l}</div>
-                    <div className="mt-0.5 text-xs font-bold" style={{ color: s.c }}>USD {s.v}</div>
+                    <div className="mt-0.5 text-xs font-bold" style={{ color: s.c }}>{reportingCurrency} {s.v}</div>
                   </div>
                 ))}
               </div>
@@ -158,13 +162,18 @@ export function Drawer({
                         </div>
                       </div>
                       <div className="shrink-0 text-right">
+                        {/* Original currency amount — as on the bank statement */}
                         <div className="text-sm font-bold"
                           style={{ color: t.net > 0 ? "#16a34a" : t.net < 0 ? "#dc2626" : "#94a3b8" }}>
                           {t.net > 0 ? "+" : ""}{fmt(t.net)}
+                          <span className="ml-1 text-[9px] font-semibold text-blue-400">{t.currency}</span>
                         </div>
-                        <div className="mt-0.5 text-[9px] text-slate-400">
-                          <span className="font-bold text-blue-500">{t.currency}</span>
-                        </div>
+                        {/* Reporting-currency equivalent — only shown when currencies differ */}
+                        {t.currency !== reportingCurrency && t.netUSD != null && (
+                          <div className="mt-0.5 text-[9px] text-slate-400">
+                            ≈ {fmt(t.netUSD, reportingRate)} {reportingCurrency}
+                          </div>
+                        )}
                       </div>
                       {/* Chevron hint */}
                       <span className="text-slate-300 text-xs shrink-0">›</span>
@@ -192,6 +201,8 @@ export function Drawer({
                 isExcluded={excluded.has(selected.uid)}
                 canEdit={!!onReclassify}
                 canExclude={!!onExclude}
+                reportingCurrency={reportingCurrency}
+                reportingRate={reportingRate}
                 onBack={() => setSelected(null)}
                 onCatChange={setCatDraft}
                 onSave={handleSaveCat}
@@ -209,18 +220,21 @@ export function Drawer({
 // ─── Transaction Detail Sub-panel ─────────────────────────────────────────────
 function TxnDetail({
   txn, effCat, saving, isExcluded, canEdit, canExclude,
+  reportingCurrency, reportingRate,
   onBack, onCatChange, onSave, onExclude,
 }: {
-  txn:        Transaction;
-  effCat:     Category;
-  saving:     boolean;
-  isExcluded: boolean;
-  canEdit:    boolean;
-  canExclude: boolean;
-  onBack:     () => void;
-  onCatChange:(c: Category) => void;
-  onSave:     () => void;
-  onExclude:  () => void;
+  txn:               Transaction;
+  effCat:            Category;
+  saving:            boolean;
+  isExcluded:        boolean;
+  canEdit:           boolean;
+  canExclude:        boolean;
+  reportingCurrency: string;
+  reportingRate:     number;
+  onBack:            () => void;
+  onCatChange:       (c: Category) => void;
+  onSave:            () => void;
+  onExclude:         () => void;
 }) {
   const ck = effCat === "intercompany" ? (txn.net > 0 ? "intercompany_in" : "intercompany_out") : effCat;
 
@@ -250,12 +264,18 @@ function TxnDetail({
           </div>
         </div>
 
-        {/* Amount display */}
-        <div className="flex items-baseline gap-3">
+        {/* Amount display — original currency (as on statement) */}
+        <div className="flex items-baseline gap-2 flex-wrap">
           <span className="text-2xl font-black" style={{ color: txn.net > 0 ? "#22c55e" : "#f87171" }}>
             {txn.net > 0 ? "+" : ""}{fmt(txn.net)}
           </span>
           <span className="text-sm font-bold text-blue-400">{txn.currency}</span>
+          {/* Show reporting-currency equivalent when the transaction is in a different currency */}
+          {txn.currency !== reportingCurrency && txn.netUSD != null && (
+            <span className="text-xs text-slate-400">
+              ≈ {fmt(txn.netUSD, reportingRate)} {reportingCurrency}
+            </span>
+          )}
         </div>
 
         {/* Description */}
