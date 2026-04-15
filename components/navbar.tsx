@@ -95,8 +95,8 @@ function ServerStatus() {
   useEffect(() => {
     const check = async () => {
       try {
-        await fetch("/api/data", { cache: "no-store" });
-        setOk(true);
+        const res = await fetch("/api/data", { cache: "no-store" });
+        setOk(res.ok);
       } catch {
         setOk(false);
       }
