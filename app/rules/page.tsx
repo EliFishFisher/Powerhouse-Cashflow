@@ -23,7 +23,7 @@ const FIELD_LABELS: Record<RuleField, string> = {
 
 const EMPTY_FORM = {
   label:    "",
-  keywords: "",
+  keywords: [] as string[],
   field:    "any" as RuleField,
   cat:      "operating_out" as Category,
   enabled:  true,
@@ -50,6 +50,7 @@ export default function RulesPage() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [editId,    setEditId]    = useState<string | null>(null);
   const [form,      setForm]      = useState(EMPTY_FORM);
+  const [kwInput,   setKwInput]   = useState("");
   const [deleteId,  setDeleteId]  = useState<string | null>(null);
   const [saving,      setSaving]      = useState(false);
   const [dismissed,   setDismissed]   = useState<Set<string>>(new Set());
@@ -134,8 +135,9 @@ export default function RulesPage() {
   // ── Handlers ──────────────────────────────────────────────────────────────
   const openAdd = useCallback((prefill?: { keyword: string; cat: Category }) => {
     setEditId(null);
+    setKwInput("");
     setForm(prefill
-      ? { label: prefill.keyword, keywords: prefill.keyword, field: "details" as RuleField, cat: prefill.cat, enabled: true, entities: [] }
+      ? { label: prefill.keyword, keywords: [prefill.keyword], field: "details" as RuleField, cat: prefill.cat, enabled: true, entities: [] }
       : EMPTY_FORM,
     );
     setPanelOpen(true);
@@ -143,9 +145,10 @@ export default function RulesPage() {
 
   const openEdit = useCallback((rule: ClassificationRule) => {
     setEditId(rule.uid);
+    setKwInput("");
     setForm({
       label:    rule.label,
-      keywords: rule.keywords.join(", "),
+      keywords: [...rule.keywords],
       field:    rule.field,
       cat:      rule.cat,
       enabled:  rule.enabled,
@@ -157,14 +160,16 @@ export default function RulesPage() {
   const closePanel = useCallback(() => {
     setPanelOpen(false);
     setEditId(null);
+    setKwInput("");
   }, []);
 
   // The entity whose row we are currently editing (undefined = admin's own row)
   const saveTarget = isAdmin && activeEntity !== "All" ? activeEntity : undefined;
 
   const handleSave = useCallback(async () => {
-    const keywords = form.keywords
-      .split(",")
+    // Commit any text still in the input box before saving
+    const pendingKw = kwInput.trim().toLowerCase();
+    const keywords = [...form.keywords, ...(pendingKw ? [pendingKw] : [])]
       .map(k => k.trim().toLowerCase())
       .filter(Boolean);
     if (!form.label.trim() || keywords.length === 0) {
@@ -546,22 +551,71 @@ export default function RulesPage() {
                 />
               </FormField>
 
-              <FormField label="Keywords" hint="comma-separated · case-insensitive">
-                <input
-                  value={form.keywords}
-                  onChange={e => setForm(f => ({ ...f, keywords: e.target.value }))}
-                  placeholder="e.g. salary, payroll, deel"
-                  style={inputStyle}
-                />
-                {form.keywords.trim() && (
-                  <div style={{ marginTop: 7, display: "flex", flexWrap: "wrap", gap: 4 }}>
-                    {form.keywords.split(",").map(k => k.trim()).filter(Boolean).map(k => (
-                      <span key={k} style={{ fontSize: 11, background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 4, padding: "2px 7px", color: "#475569" }}>
-                        {k}
-                      </span>
-                    ))}
+              <FormField label="Keywords" hint="press Enter or + to add">
+                {/* Tag input box */}
+                <div style={{
+                  display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center",
+                  border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 6px",
+                  background: "#fff", minHeight: 38, cursor: "text",
+                }}
+                  onClick={e => (e.currentTarget.querySelector("input") as HTMLInputElement)?.focus()}
+                >
+                  {/* Existing keyword chips */}
+                  {form.keywords.map((kw, i) => (
+                    <span key={i} style={{
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                      background: "#f1f5f9", border: "1px solid #e2e8f0",
+                      borderRadius: 4, padding: "2px 6px 2px 8px",
+                      fontSize: 11, color: "#334155", fontWeight: 500,
+                    }}>
+                      {kw}
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); setForm(f => ({ ...f, keywords: f.keywords.filter((_, j) => j !== i) })); }}
+                        style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 14, height: 14, borderRadius: "50%", border: "none", background: "#cbd5e1", color: "#64748b", cursor: "pointer", fontSize: 10, lineHeight: 1, padding: 0 }}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+
+                  {/* Text input + add button */}
+                  <div style={{ display: "flex", alignItems: "center", flex: 1, minWidth: 120, gap: 4 }}>
+                    <input
+                      value={kwInput}
+                      onChange={e => setKwInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const kw = kwInput.trim().toLowerCase();
+                          if (kw && !form.keywords.includes(kw)) setForm(f => ({ ...f, keywords: [...f.keywords, kw] }));
+                          setKwInput("");
+                        } else if (e.key === "Backspace" && kwInput === "" && form.keywords.length > 0) {
+                          setForm(f => ({ ...f, keywords: f.keywords.slice(0, -1) }));
+                        }
+                      }}
+                      placeholder={form.keywords.length === 0 ? "e.g. salary, rent, deel…" : "Add another…"}
+                      style={{ flex: 1, border: "none", outline: "none", fontSize: 12, background: "transparent", minWidth: 80, height: 24 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const kw = kwInput.trim().toLowerCase();
+                        if (kw && !form.keywords.includes(kw)) setForm(f => ({ ...f, keywords: [...f.keywords, kw] }));
+                        setKwInput("");
+                      }}
+                      style={{
+                        height: 24, padding: "0 8px", fontSize: 11, fontWeight: 700,
+                        background: kwInput.trim() ? "#3b82f6" : "#e2e8f0",
+                        color: kwInput.trim() ? "#fff" : "#94a3b8",
+                        border: "none", borderRadius: 4, cursor: kwInput.trim() ? "pointer" : "default",
+                        transition: "background 0.15s, color 0.15s", flexShrink: 0,
+                      }}
+                    >
+                      +
+                    </button>
                   </div>
-                )}
+                </div>
               </FormField>
 
               <FormField label="Match in field">
