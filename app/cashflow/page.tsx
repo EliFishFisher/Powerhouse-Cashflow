@@ -15,7 +15,7 @@ import type { Category, ViewPeriod } from "@/lib/constants";
 import type { DrawerState, Transaction } from "@/lib/types";
 
 export default function CashflowPage() {
-  const { data, loading, serverOk, fxRates, excluded, overrides, isAdmin, companies, refresh, clearAll: clearData, saveBankBalances } = useAppData();
+  const { data, loading, serverOk, fxRates, excluded, overrides, isAdmin, companies, refresh, clearAll: clearData, saveBankBalances, setCatOverride, toggleExclude } = useAppData();
 
   const [entity,      setEntity]      = useState("Consolidated");
   const [viewPeriod,  setViewPeriod]  = useState<ViewPeriod>("monthly");
@@ -454,7 +454,9 @@ export default function CashflowPage() {
       )}
 
       <Drawer open={!!drawer} onClose={() => setDrawer(null)} txns={drawerTxns}
-        title={drawer?.title||""} weekLabel={drawer?periodLabel(drawer.week,viewPeriod):""} entity={entity} />
+        title={drawer?.title||""} weekLabel={drawer?periodLabel(drawer.week,viewPeriod):""} entity={entity}
+        overrides={overrides} excluded={excluded}
+        onReclassify={setCatOverride} onExclude={toggleExclude} />
     </div>
   );
 }
