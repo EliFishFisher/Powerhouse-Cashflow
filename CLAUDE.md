@@ -228,6 +228,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...
 ## 8. Session Changelog
 | Date | Change |
 |------|--------|
+| 2026-04-15 | Removed debug `console.log` lines from `api/data/route.ts` and `api-route-helper.ts`; kept `console.error` for real errors |
+| 2026-04-15 | FX ticker (`components/fx-ticker.tsx`) now renders `null` on loading/error instead of showing a red "FX unavailable" banner — API blocked on local network, no need to surface the error |
+| 2026-04-15 | Initialized git repo — `Supabase.txt` and `.claude/` added to `.gitignore` before first commit to prevent credential leak |
 | 2026-04-12 | Multi-format parser built — `FIELD_ALIASES` + `detectHeaderRow()` + `parseGenericSheet()` handles CA_Movements and any bank with readable column headers |
 | 2026-04-12 | Duplicate UID hash fixed — balance column (or row index) added as tiebreaker in `parseGenericSheet` and `parseGenericCsv` |
 | 2026-04-12 | `useAppData` refactored — `fetchData()` shared between mount and `refresh()`; no more `window.location.reload()` after upload |
@@ -241,8 +244,6 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...
 ---
 
 ## 9. Pending / Future Work
-- [ ] Deploy to Vercel (push to GitHub → connect Vercel → add env vars)
-- [ ] Remove debug `console.log` lines from `api/data/route.ts` and `api-route-helper.ts` once stable
+- [ ] Deploy to Vercel — git repo initialized; next step: push to GitHub then connect to Vercel + add env vars
 - [ ] Test consolidated view shows all companies' data correctly post-upload
-- [ ] "FX unavailable" banner — external API (frankfurter.app) blocked on this network; not a code bug
 - [ ] **Keep this file updated** — edit CLAUDE.md at the end of every session that changes code
