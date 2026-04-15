@@ -183,7 +183,7 @@ UID hashing: entity + date + full description + debit + credit + ref + **balance
 ### `hooks/use-app-data.ts`
 - `fetchData()` — called on mount and by `refresh()`
 - `refresh()` — re-fetches without page reload (called after upload)
-- Returns: `data, loading, serverOk, isAdmin, companies, refresh, clearAll, saveTransactions, saveRules, toggleExclude, setCatOverride`
+- Returns: `data, loading, serverOk, fxRates, setFxRates, reportingCurrency, reportingRate, setReportingCurrency, isAdmin, companies, refresh, clearAll, saveTransactions, saveRules, saveBankBalances, saveSubsidiaries, toggleExclude, setCatOverride, removeCatOverride`
 
 ### `lib/api-route-helper.ts` → `saveField(req, field)`
 Single shared write handler. Logic:
@@ -228,6 +228,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...
 ## 8. Session Changelog
 | Date | Change |
 |------|--------|
+| 2026-04-15 | **Multi-currency reporting** — `CurrencySelector` component added to navbar (replaces static "USD Reporting" badge). Supports USD/ILS/EUR/GBP/CHF/JPY/CAD/AUD. FX rates and selected currency persisted to localStorage (`ph_fx_rates`, `ph_reporting_ccy`). `fmt(v, rate?)` updated with optional rate multiplier. All cashflow table values, KPI strip, and balance rows convert to the selected reporting currency via `reportingRate`. |
+| 2026-04-15 | **Multi-currency drawer accuracy** — Drawer KPI totals now sum `t.netUSD` (USD-normalised) instead of `t.net`, so batches containing mixed currencies (EUR + ILS + USD) add up correctly. Each transaction row shows original-currency amount (as on the bank statement) plus a small `≈ X CCY` hint when it differs from the reporting currency. Detail panel shows the same. `reportingCurrency`/`reportingRate` props threaded from cashflow page → Drawer → TxnDetail. |
+| 2026-04-15 | **Rent & Facilities category** — new `op_rent` category added between `op_regulatory` and `op_office` in `ALL_CATS` and `OP_SUBCATS`. Classifier: dedicated keyword rule with English (rent, lease, landlord, workspace, warehouse) and Hebrew (שכר דירה, שכירות, דמי שכירות) keywords. "rent" removed from `op_office` rule. Blue colour scheme (#0369a1 / #e0f2fe). |
+| 2026-04-15 | **Tag input for rule keywords** — `form.keywords` changed from comma-separated string to `string[]`. New tag-input UI: existing keywords render as removable chips (× button), Enter or + button adds a tag, Backspace on empty removes last tag, duplicates silently ignored. Any uncommitted text auto-committed on save. |
 | 2026-04-15 | Bank Hapoalim support — `parseIsraeliBankSheet` now detects Hebrew headers (תאריך/הפעולה) in addition to Bank Leumi English headers; Poalim Foreign balance-only sheets detected early and skipped with diagnostic |
 | 2026-04-15 | `classifyIsraeliBankTxn` extended with Hebrew Hapoalim operation names: עמלה/ד.ניהול/דמי/מסלול→bank_charges, מכס/מעמ→op_regulatory, זיכוי→financing_in, פדקס/דואר→op_office, משכורת→salary, העברה/במקבץ→transfer with keyword fallback |
 | 2026-04-15 | SVB CSV credit transactions now default to `financing_in` instead of `operating_out` |
