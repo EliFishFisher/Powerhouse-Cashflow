@@ -32,7 +32,7 @@ Thumbs.db
 .idea/
 
 # Data (shared via OneDrive — not committed to git)
-data/
+/data/
 
 # Sensitive credential files
 Supabase.txt
