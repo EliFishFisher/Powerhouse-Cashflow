@@ -20,12 +20,14 @@ interface Props {
 const COMPANY_ENTITIES = ENTITIES.filter(e => e !== "Consolidated");
 
 export function FileLoader({ transactions, meta, serverOk, isAdmin, companies, onLoaded, onClear }: Props) {
-  const [dragging,     setDragging]     = useState(false);
-  const [loading,      setLoading]      = useState(false);
-  const [targetEntity, setTargetEntity] = useState<string>(COMPANY_ENTITIES[0] ?? "");
-  const [status,       setStatus]       = useState<{ added: number; dupes: number; total: number; errors: string[]; step?: string } | null>(null);
+  const [dragging,      setDragging]      = useState(false);
+  const [loading,       setLoading]       = useState(false);
+  const [targetEntity,  setTargetEntity]  = useState<string>(COMPANY_ENTITIES[0] ?? "");
+  const [pendingFiles,  setPendingFiles]  = useState<File[] | null>(null);
+  const [status,        setStatus]        = useState<{ added: number; dupes: number; total: number; errors: string[]; step?: string } | null>(null);
 
-  const processFiles = useCallback(async (files: File[]) => {
+  const processFiles = useCallback(async (files: File[], entityOverride?: string) => {
+    const entity = entityOverride ?? targetEntity;
     setLoading(true);
     setStatus({ added: 0, dupes: 0, total: 0, errors: [], step: `Reading ${files.length} file(s)…` });
 
@@ -33,7 +35,6 @@ export function FileLoader({ transactions, meta, serverOk, isAdmin, companies, o
       let allNew: Transaction[] = [];
       const errors: string[] = [];
 
-      // ── Parse each file ────────────────────────────────────────────────────
       for (const file of files) {
         const isXlsx = /\.(xlsx|xls)$/i.test(file.name);
         const isCsv  = /\.csv$/i.test(file.name);
@@ -42,7 +43,6 @@ export function FileLoader({ transactions, meta, serverOk, isAdmin, companies, o
           if (isXlsx) {
             const buf = await file.arrayBuffer();
             const { txns: parsed, diagnostics } = parseWorkbook(new Uint8Array(buf), file.name);
-            console.log("[FileLoader] parsed", parsed.length, "txns from", file.name);
             if (parsed.length === 0 && diagnostics.length > 0) {
               for (const d of diagnostics) {
                 const preview = d.firstRows
@@ -55,14 +55,10 @@ export function FileLoader({ transactions, meta, serverOk, isAdmin, companies, o
           } else {
             const text = await file.text();
             const firstLine = text.slice(0, 100);
-            // Try SVB first, then generic CSV with header detection
             if (firstLine.includes("From:") || text.split("\n")[1]?.includes("Bank ID")) {
-              const parsed = parseSVBCsv(text, file.name);
-              console.log("[FileLoader] SVB parsed", parsed.length, "txns from", file.name);
-              allNew = allNew.concat(parsed);
+              allNew = allNew.concat(parseSVBCsv(text, file.name));
             } else {
               const parsed = parseGenericCsv(text, file.name);
-              console.log("[FileLoader] generic CSV parsed", parsed.length, "txns from", file.name);
               if (parsed.length > 0) {
                 allNew = allNew.concat(parsed);
               } else {
@@ -75,22 +71,19 @@ export function FileLoader({ transactions, meta, serverOk, isAdmin, companies, o
         }
       }
 
-      // If nothing parsed and no diagnostic was added, give a generic message
       if (allNew.length === 0 && errors.length === 0) {
         errors.push("No transactions found. Please upload a Bank Leumi .xlsx/.xls export or SVB .csv export.");
       }
 
       setStatus({ added: 0, dupes: 0, total: 0, errors, step: `Parsed ${allNew.length} rows — deduplicating…` });
 
-      // ── Override entity for admin uploads ──────────────────────────────────
-      if (isAdmin && targetEntity) {
-        allNew = allNew.map(t => ({ ...t, entity: targetEntity }));
+      if (isAdmin && entity) {
+        allNew = allNew.map(t => ({ ...t, entity }));
       }
 
-      // ── Deduplicate against existing transactions ──────────────────────────
       let baseTxns = transactions;
-      if (isAdmin && targetEntity) {
-        const company = companies.find(c => c.entity_name === targetEntity);
+      if (isAdmin && entity) {
+        const company = companies.find(c => c.entity_name === entity);
         baseTxns = company?.data.transactions ?? [];
       }
 
@@ -102,22 +95,18 @@ export function FileLoader({ transactions, meta, serverOk, isAdmin, companies, o
         totalTxns: merged.length,
       };
 
-      // ── Save ───────────────────────────────────────────────────────────────
-      const entity = isAdmin ? targetEntity : undefined;
+      const saveEntity = isAdmin ? entity : undefined;
       setStatus({ added, dupes, total: merged.length, errors, step: `Saving ${merged.length} transactions to server…` });
 
-      await apiClient.saveTransactions(merged, entity);
-      await apiClient.saveMeta(newMeta, entity);
+      await apiClient.saveTransactions(merged, saveEntity);
+      await apiClient.saveMeta(newMeta, saveEntity);
 
       setStatus({ added, dupes, total: merged.length, errors });
-
-      // Wait 1.5s so the user can read the result, then refresh data
       await new Promise(r => setTimeout(r, 1500));
       onLoaded();
 
     } catch (e) {
       const msg = (e as Error).message ?? "Unknown error";
-      console.error("[FileLoader] error:", msg);
       setStatus({ added: 0, dupes: 0, total: 0, errors: [`❌ ${msg}`] });
     } finally {
       setLoading(false);
@@ -126,30 +115,53 @@ export function FileLoader({ transactions, meta, serverOk, isAdmin, companies, o
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setDragging(false);
-    processFiles([...e.dataTransfer.files]);
-  }, [processFiles]);
+    const files = [...e.dataTransfer.files];
+    if (isAdmin) {
+      setPendingFiles(files);
+    } else {
+      processFiles(files);
+    }
+  }, [processFiles, isAdmin]);
 
   const onInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) processFiles([...e.target.files]);
-    // Reset value so the same file can be re-uploaded
+    if (e.target.files) {
+      const files = [...e.target.files];
+      if (isAdmin) {
+        setPendingFiles(files);
+      } else {
+        processFiles(files);
+      }
+    }
     e.target.value = "";
   };
 
   return (
     <div className="border-b border-slate-200 bg-white px-5 py-3">
-      {/* Admin: company selector */}
-      {isAdmin && (
-        <div className="mb-3 flex items-center gap-3">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Upload for:</span>
-          <div className="flex gap-2">
-            {COMPANY_ENTITIES.map(e => (
-              <button key={e} onClick={() => setTargetEntity(e)}
-                className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-                  targetEntity === e ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                }`}>
-                {e}
-              </button>
-            ))}
+
+      {/* Company picker modal — shown after dropping a file as admin */}
+      {pendingFiles && isAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="rounded-xl bg-white shadow-2xl p-6 w-80">
+            <h3 className="text-sm font-bold text-slate-700 mb-1">Upload for which company?</h3>
+            <p className="text-xs text-slate-400 mb-4">{pendingFiles.length} file{pendingFiles.length !== 1 ? "s" : ""} selected</p>
+            <div className="flex flex-col gap-2">
+              {COMPANY_ENTITIES.map(e => (
+                <button key={e}
+                  onClick={() => {
+                    setTargetEntity(e);
+                    const files = pendingFiles;
+                    setPendingFiles(null);
+                    processFiles(files, e);
+                  }}
+                  className="rounded-lg px-4 py-2.5 text-sm font-semibold bg-slate-100 hover:bg-blue-600 hover:text-white transition-colors text-slate-700 text-left">
+                  {e}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setPendingFiles(null)}
+              className="mt-4 w-full text-xs text-slate-400 hover:text-slate-600 transition-colors">
+              Cancel
+            </button>
           </div>
         </div>
       )}
@@ -169,9 +181,7 @@ export function FileLoader({ transactions, meta, serverOk, isAdmin, companies, o
             <div className="text-sm font-semibold text-slate-700">
               {loading
                 ? `Processing files for ${isAdmin ? targetEntity : "your account"}…`
-                : isAdmin
-                  ? `Drop ${targetEntity} bank extract here or click to browse`
-                  : "Drop bank extract files here or click to browse"}
+                : "Drop bank extract files here or click to browse"}
             </div>
             <div className="mt-0.5 text-xs text-slate-400">
               Accepts .xlsx / .xls (Bank Leumi) · .csv (SVB) · Auto-detects currency
