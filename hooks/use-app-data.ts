@@ -89,19 +89,7 @@ export function useAppData() {
     await fetchData();
   }, [fetchData]);
 
-  // ── Live FX rates (refresh every 60s) ────────────────────────────────────
-  useEffect(() => {
-    const fetch_ = async () => {
-      try {
-        const res  = await fetch("https://api.frankfurter.app/latest?from=USD&to=ILS,EUR,GBP");
-        const json = await res.json();
-        if (json.rates) setFxRates(json.rates as FxRates);
-      } catch { /* silent */ }
-    };
-    fetch_();
-    const id = setInterval(fetch_, 60_000);
-    return () => clearInterval(id);
-  }, []);
+  // FX rates intentionally disabled — external API blocked/CORS restricted
 
   // ── Exclude toggle ────────────────────────────────────────────────────────
   const toggleExclude = useCallback((uid: string) => {
