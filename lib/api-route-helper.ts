@@ -59,10 +59,19 @@ export async function saveField(req: NextRequest, field: DbField) {
       }
     }
 
-    const { error: saveErr } = await supabase
+    const { error: saveErr, count } = await supabase
       .from("app_data")
-      .update({ [field]: data })
+      .update({ [field]: data }, { count: "exact" })
       .eq("user_id", userId);
+
+    if (saveErr) {
+      console.error(`saveField(${field}) DB error:`, saveErr);
+      return NextResponse.json({ error: saveErr.message }, { status: 500 });
+    }
+    if (count === 0) {
+      console.error(`saveField(${field}): UPDATE matched 0 rows for user_id=${userId}`);
+      return NextResponse.json({ error: "No row found to update — data not saved" }, { status: 500 });
+    }
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error(`POST /api/${field} error:`, err);

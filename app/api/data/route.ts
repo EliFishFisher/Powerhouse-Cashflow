@@ -14,6 +14,11 @@ export async function GET() {
       .single();
 
     if (profile?.is_admin) {
+      // Ensure the admin's own app_data row exists so rule/settings saves don't silently fail
+      await supabase.from("app_data").upsert(
+        { user_id: user.id, entity_name: profile.entity_name },
+        { onConflict: "user_id", ignoreDuplicates: true }
+      );
       // Fund admin: return all companies' data merged
       const all = await loadAllAppData(supabase);
       return NextResponse.json({ isAdmin: true, companies: all });
