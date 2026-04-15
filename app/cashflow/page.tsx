@@ -15,7 +15,7 @@ import type { Category, ViewPeriod } from "@/lib/constants";
 import type { DrawerState, Transaction } from "@/lib/types";
 
 export default function CashflowPage() {
-  const { data, loading, serverOk, fxRates, excluded, overrides, isAdmin, companies, refresh, clearAll: clearData } = useAppData();
+  const { data, loading, serverOk, fxRates, excluded, overrides, isAdmin, companies, refresh, clearAll: clearData, saveBankBalances } = useAppData();
 
   const [entity,      setEntity]      = useState("Consolidated");
   const [viewPeriod,  setViewPeriod]  = useState<ViewPeriod>("monthly");
@@ -164,9 +164,10 @@ export default function CashflowPage() {
     <div className="flex flex-1 flex-col overflow-hidden bg-slate-100">
       <FileLoader
         transactions={data.transactions} meta={data.meta} serverOk={serverOk}
-        isAdmin={isAdmin} companies={companies}
+        isAdmin={isAdmin} companies={companies} subsidiaries={data.subsidiaries}
         onLoaded={refresh}
         onClear={async () => { await clearData(); }}
+        onSaveBankBalances={saveBankBalances}
       />
 
       {/* Recon banner */}

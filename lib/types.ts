@@ -52,6 +52,28 @@ export interface ManualEntry {
   createdAt:   string;
 }
 
+// ─── SUBSIDIARY ───────────────────────────────────────────────────────────────
+export interface Subsidiary {
+  uid:          string;
+  name:         string;         // "Corneat Vision Ltd"
+  parentEntity: string;         // parent company name (loosely typed — avoids coupling to ENTITIES)
+  aliases:      string[];       // lower-case substrings to match in filenames
+  bankAccounts: string[];       // bank account numbers e.g. "12-584-36967"
+}
+
+// ─── BANK BALANCE SNAPSHOT ────────────────────────────────────────────────────
+export interface BankBalance {
+  uid:        string;
+  entity:     string;           // parent entity
+  subsidiary?: string;          // matched subsidiary name (if known)
+  accountNo?: string;           // bank account number
+  date:       string;           // "YYYY-MM-DD" — date balance was reported by the bank
+  currency:   string;           // "ILS", "USD", etc.
+  balance:    number;
+  source:     string;           // filename
+  importedAt: string;           // ISO timestamp of import
+}
+
 // ─── RECONCILIATION ───────────────────────────────────────────────────────────
 export interface ReconFix {
   type:  "reclassify" | "exclude";
@@ -91,6 +113,8 @@ export interface AppData {
   manualEntries: ManualEntry[];
   reconStatus:   ReconStatus;
   rules:         ClassificationRule[];
+  bankBalances:  BankBalance[];
+  subsidiaries:  Subsidiary[];
 }
 
 // ─── FX RATES ─────────────────────────────────────────────────────────────────

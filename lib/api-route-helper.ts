@@ -15,7 +15,9 @@ type DbField =
   | "manual_entries"
   | "rules"
   | "meta"
-  | "recon_status";
+  | "recon_status"
+  | "bank_balances"
+  | "subsidiaries";
 
 export async function saveField(req: NextRequest, field: DbField) {
   try {

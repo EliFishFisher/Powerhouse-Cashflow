@@ -1,7 +1,7 @@
 // This module runs on the client only (file parsing uses browser APIs)
 import * as XLSX from "xlsx";
 import { classify, classifyIsraeliBankTxn, suggestCategory, CAT_KEYWORDS } from "./classify";
-import type { Transaction } from "./types";
+import type { Transaction, BankBalance, Subsidiary } from "./types";
 import type { Category } from "./constants";
 
 // ─── HASH ─────────────────────────────────────────────────────────────────────
@@ -13,14 +13,102 @@ function hashTxn(fields: string[]): string {
 }
 
 // ─── ENTITY FROM FILENAME ─────────────────────────────────────────────────────
-export function entityFromFilename(name: string): string {
+// Checks subsidiary aliases first (more specific), then falls back to parent entity.
+export function entityFromFilename(name: string, subsidiaries?: Subsidiary[]): string {
   const n = name.toLowerCase();
+  if (subsidiaries) {
+    for (const sub of subsidiaries) {
+      if (sub.aliases.some(a => a && n.includes(a.toLowerCase()))) return sub.name;
+    }
+  }
   if (n.includes("corneat"))   return "Corneat";
   if (n.includes("holmes"))    return "Holmes Place PT";
   if (n.includes("orange"))    return "Orange Space";
   if (n.includes("tribute"))   return "Tribute Brands";
   if (n.includes("glaucure") || n.includes("glau")) return "GlauCure";
   return "Unknown";
+}
+
+// ─── BALANCE REPORT PARSER (Poalim Foreign) ───────────────────────────────────
+// Detects and parses Bank Hapoalim "foreign currency balance" reports.
+// These are NOT transaction files — they report the NIS-equivalent value of
+// all foreign currency account balances as of a given date.
+//
+// Format:
+//   Row 0: "סה''כ שווי יתרות"          ← trigger
+//   Row 1: "מספר חשבון  12-584-36967  תאריך הפקה  15.04.2026  נכון ליום עסקים  14.04.2026"
+//   Row 2: "מטבע לשיערוך" | "שווי יתרות"
+//   Row 3: "שקל חדש" | 586696.23
+//   Row 4: "דולר ארצות הברית" | 0
+//   ...
+export function parseBalanceReport(
+  rows:         unknown[][],
+  filename:     string,
+  subsidiaries?: Subsidiary[],
+): BankBalance[] | null {
+  if (!rows.length) return null;
+  const r0 = String((rows[0] as unknown[])[0] ?? "");
+  if (!r0.includes("סה") || !r0.includes("יתרות")) return null;
+
+  // Extract account number and date from row 1
+  const r1 = String((rows[1] as unknown[])?.[0] ?? "");
+  const acctMatch = r1.match(/(\d{2}-\d{3}-\d{5,})/);
+  const accountNo = acctMatch?.[1] ?? undefined;
+  const dateMatch = r1.match(/נכון ליום[^0-9]*(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  let date = new Date().toISOString().slice(0, 10);
+  if (dateMatch) {
+    const [, dd, mm, yyyy] = dateMatch;
+    date = `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
+  }
+
+  // Identify which entity / subsidiary this account belongs to
+  let entity = entityFromFilename(filename, subsidiaries);
+  let subsidiary: string | undefined;
+  if (accountNo && subsidiaries) {
+    const match = subsidiaries.find(s => s.bankAccounts.includes(accountNo));
+    if (match) {
+      subsidiary = match.name;
+      entity = match.parentEntity;
+    }
+  }
+
+  // Hebrew currency name → ISO code
+  const CURRENCY_MAP: Record<string, string> = {
+    "שקל חדש":             "ILS",
+    "דולר":                "USD",
+    "אירו":                "EUR",
+    "לירה שטרלינג":        "GBP",
+    "פרנק שוויצרי":        "CHF",
+    "ין יפני":             "JPY",
+    "דולר קנדי":           "CAD",
+    "דולר אוסטרלי":       "AUD",
+  };
+
+  const balances: BankBalance[] = [];
+  // Data rows start at row 3 (skip header row 2)
+  for (let i = 3; i < rows.length; i++) {
+    const r = rows[i] as unknown[];
+    if (!r || !r[0]) continue;
+    const currencyHeb = String(r[0]).trim();
+    const rawBalance  = parseNum(r[1]);
+    if (!currencyHeb || rawBalance === 0) continue;
+
+    // Map Hebrew currency name to ISO code
+    let currency = "ILS";
+    for (const [heb, iso] of Object.entries(CURRENCY_MAP)) {
+      if (currencyHeb.includes(heb.split(" ")[0])) { currency = iso; break; }
+    }
+
+    const uid = hashTxn([entity, subsidiary ?? "", accountNo ?? "", date, currency, rawBalance.toFixed(2)]);
+    balances.push({
+      uid, entity, subsidiary, accountNo, date, currency,
+      balance: rawBalance,
+      source: filename,
+      importedAt: new Date().toISOString(),
+    });
+  }
+
+  return balances.length > 0 ? balances : null;
 }
 
 // ─── WEEK MONDAY ──────────────────────────────────────────────────────────────
@@ -471,16 +559,33 @@ export interface ParseDiagnostic {
 
 // ─── PARSE XLSX / XLS WORKBOOK ────────────────────────────────────────────────
 export function parseWorkbook(
-  buffer: Uint8Array,
-  filename: string,
-): { txns: Transaction[]; diagnostics: ParseDiagnostic[] } {
-  const entity = entityFromFilename(filename);
+  buffer:       Uint8Array,
+  filename:     string,
+  subsidiaries?: Subsidiary[],
+): { txns: Transaction[]; diagnostics: ParseDiagnostic[]; balanceReports: BankBalance[] } {
+  const entity = entityFromFilename(filename, subsidiaries);
   const wb = XLSX.read(buffer, { type: "array", cellDates: true });
   let txns: Transaction[] = [];
-  const diagnostics: ParseDiagnostic[] = [];
+  const diagnostics:    ParseDiagnostic[] = [];
+  const balanceReports: BankBalance[]     = [];
 
   for (const sn of wb.SheetNames) {
     const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sn], { header: 1, defval: null }) as unknown[][];
+
+    // Check for balance-report sheet FIRST (Poalim Foreign)
+    const bals = parseBalanceReport(rows, filename, subsidiaries);
+    if (bals) {
+      balanceReports.push(...bals);
+      // Show as diagnostic so the user knows we found it
+      diagnostics.push({
+        sheetName: sn,
+        firstRows: rows.slice(0, 6).map(r =>
+          (r as unknown[]).slice(0, 10).map(v => (v === null || v === undefined) ? "" : String(v))
+        ),
+        detectedFormat: "Balance Report (Poalim Foreign)",
+      });
+      continue; // no transactions to parse
+    }
 
     // Detect which format was matched (for diagnostics)
     const leumiMatch   = parseIsraeliBankSheet(rows, filename, sn) !== null;
@@ -502,7 +607,7 @@ export function parseWorkbook(
       });
     }
   }
-  return { txns, diagnostics };
+  return { txns, diagnostics, balanceReports };
 }
 
 // ─── PARSE SVB / GENERIC CSV ──────────────────────────────────────────────────
@@ -518,7 +623,7 @@ function parseCsvLine(line: string): string[] {
   return out;
 }
 
-export function parseSVBCsv(text: string, filename: string): Transaction[] {
+export function parseSVBCsv(text: string, filename: string, subsidiaries?: Subsidiary[]): Transaction[] {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   if (lines.length < 3) return [];
 
@@ -544,12 +649,19 @@ export function parseSVBCsv(text: string, filename: string): Transaction[] {
     const notes    = cols[23] || "";
     const entityRaw = cols[4] || "";
 
-    let entity: string = entityFromFilename(filename);
+    let entity: string = entityFromFilename(filename, subsidiaries);
     const eRaw = entityRaw.toLowerCase();
-    if      (eRaw.includes("corneat"))  entity = "Corneat";
-    else if (eRaw.includes("holmes"))   entity = "Holmes Place PT";
-    else if (eRaw.includes("orange"))   entity = "Orange Space";
-    else if (eRaw.includes("tribute"))  entity = "Tribute Brands";
+    // Check subsidiaries against account name in the CSV row first
+    if (subsidiaries) {
+      const subMatch = subsidiaries.find(s => s.aliases.some(a => a && eRaw.includes(a.toLowerCase())));
+      if (subMatch) entity = subMatch.name;
+    }
+    if (entity === "Unknown") {
+      if      (eRaw.includes("corneat"))  entity = "Corneat";
+      else if (eRaw.includes("holmes"))   entity = "Holmes Place PT";
+      else if (eRaw.includes("orange"))   entity = "Orange Space";
+      else if (eRaw.includes("tribute"))  entity = "Tribute Brands";
+    }
 
     const week = toWeekMonday(dateStr);
     const uid  = hashTxn([entity, dateStr, bankRef, debit.toFixed(2), credit.toFixed(2), tranType.slice(0, 8)]);
@@ -580,7 +692,7 @@ export function parseSVBCsv(text: string, filename: string): Transaction[] {
 }
 
 // Also try parsing generic CSV (tab or comma separated with headers)
-export function parseGenericCsv(text: string, filename: string): Transaction[] {
+export function parseGenericCsv(text: string, filename: string, subsidiaries?: Subsidiary[]): Transaction[] {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   if (lines.length < 2) return [];
 
@@ -610,7 +722,7 @@ export function parseGenericCsv(text: string, filename: string): Transaction[] {
   const hasAmount = colMap.amount !== undefined || colMap.debit !== undefined || colMap.credit !== undefined;
   if (colMap.date === undefined || !hasAmount) return [];
 
-  const entity = entityFromFilename(filename);
+  const entity = entityFromFilename(filename, subsidiaries);
   const txns: Transaction[] = [];
 
   for (let i = 1; i < lines.length; i++) {

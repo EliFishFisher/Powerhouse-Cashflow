@@ -16,6 +16,23 @@ const SEV_CONFIG = {
   info:    { label: "Info",    bg: "#eff6ff", border: "#bfdbfe", dot: "#3b82f6", text: "#1e40af" },
 };
 
+// ─── Bank balance helpers ──────────────────────────────────────────────────────
+function computeEntityNet(transactions: import("@/lib/types").Transaction[], entity: string) {
+  return transactions
+    .filter(t => t.entity === entity || t.entity.startsWith(entity))
+    .reduce((sum, t) => sum + t.net, 0);
+}
+
+function getLatestBalance(
+  bankBalances: import("@/lib/types").BankBalance[],
+  entity: string,
+  currency: string,
+) {
+  return [...bankBalances]
+    .filter(b => (b.entity === entity || b.subsidiary) && b.currency === currency)
+    .sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
+}
+
 export default function ReconcilePage() {
   const {
     data, loading, serverOk, fxRates,
@@ -171,6 +188,15 @@ export default function ReconcilePage() {
           {running ? "Saving…" : "💾 Save snapshot"}
         </button>
       </div>
+
+      {/* ── Bank Balance Comparison ────────────────────────────────────────── */}
+      {data.bankBalances.length > 0 && (
+        <BankBalanceComparison
+          bankBalances={data.bankBalances}
+          transactions={[...data.transactions, ...data.adjustments]}
+          excluded={excluded}
+        />
+      )}
 
       {/* ── Issue list ─────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
@@ -404,6 +430,99 @@ export default function ReconcilePage() {
           {warningCount} warning{warningCount !== 1 ? "s" : ""}
         </span>
         <span>Reconciliation runs live — issues update as you edit transactions</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Bank Balance Comparison Panel ────────────────────────────────────────────
+function BankBalanceComparison({
+  bankBalances,
+  transactions,
+  excluded,
+}: {
+  bankBalances:  import("@/lib/types").BankBalance[];
+  transactions:  import("@/lib/types").Transaction[];
+  excluded:      Set<string>;
+}) {
+  // Group by entity + subsidiary + currency — show the latest snapshot for each
+  const activeTxns = transactions.filter(t => !excluded.has(t.uid));
+
+  // Collect unique keys: entity+subsidiary+currency
+  const seen = new Map<string, import("@/lib/types").BankBalance>();
+  for (const b of [...bankBalances].sort((a, z) => z.date.localeCompare(a.date))) {
+    const key = `${b.entity}|${b.subsidiary ?? ""}|${b.currency}`;
+    if (!seen.has(key)) seen.set(key, b);
+  }
+  const rows = [...seen.values()];
+
+  function fmtN(n: number, ccy: string) {
+    const sign = n >= 0 ? "+" : "";
+    return sign + new Intl.NumberFormat("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n) + " " + ccy;
+  }
+
+  return (
+    <div style={{ flexShrink: 0, borderBottom: "1px solid #e2e8f0", background: "#f0f9ff", padding: "12px 20px" }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#0369a1", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+        🏦 Bank Balance Snapshots
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+        {rows.map(b => {
+          const entityKey = b.subsidiary ?? b.entity;
+          // Sum net for all transactions matching this entity/subsidiary
+          const computedNet = activeTxns
+            .filter(t => t.entity === entityKey || t.entity === b.entity)
+            .reduce((s, t) => s + t.net, 0);
+          const gap        = b.balance - computedNet;
+          const pct        = computedNet !== 0 ? Math.abs(gap / computedNet) * 100 : 100;
+          const isClose    = Math.abs(gap) < 500;
+
+          return (
+            <div key={`${b.uid}`} style={{
+              background: "#fff", border: `1px solid ${isClose ? "#bbf7d0" : "#fde68a"}`,
+              borderLeft: `3px solid ${isClose ? "#22c55e" : "#f59e0b"}`,
+              borderRadius: 8, padding: "10px 14px", minWidth: 240,
+            }}>
+              {/* Entity name */}
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#1e293b", marginBottom: 4 }}>
+                {b.subsidiary ?? b.entity}
+                {b.accountNo && (
+                  <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 400, color: "#94a3b8" }}>
+                    Acct {b.accountNo}
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "3px 10px", fontSize: 11 }}>
+                <span style={{ color: "#64748b" }}>Bank (as of {b.date})</span>
+                <span style={{ fontWeight: 700, color: "#0f172a" }}>
+                  {new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(b.balance)} {b.currency}
+                </span>
+
+                <span style={{ color: "#64748b" }}>Computed net</span>
+                <span style={{ fontWeight: 600, color: computedNet >= 0 ? "#16a34a" : "#dc2626" }}>
+                  {fmtN(computedNet, b.currency)}
+                </span>
+
+                <span style={{ color: "#64748b" }}>Gap</span>
+                <span style={{
+                  fontWeight: 700,
+                  color: isClose ? "#16a34a" : Math.abs(gap) > 10000 ? "#dc2626" : "#d97706",
+                }}>
+                  {isClose ? "✓ Reconciled" : fmtN(gap, b.currency)}
+                  {!isClose && pct < 100 && (
+                    <span style={{ marginLeft: 4, fontSize: 9, color: "#94a3b8", fontWeight: 400 }}>
+                      ({pct.toFixed(1)}% variance)
+                    </span>
+                  )}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ marginTop: 8, fontSize: 10, color: "#64748b" }}>
+        Computed net = sum of all uploaded transactions for each entity. Upload more bank statements to close the gap.
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import type { Transaction, ClassificationRule, ManualEntry, ReconStatus, AppData } from "./types";
+import type { Transaction, ClassificationRule, ManualEntry, ReconStatus, AppData, BankBalance, Subsidiary } from "./types";
 import type { Category } from "./constants";
 
 const BASE = "/api";
@@ -24,14 +24,16 @@ export const apiClient = {
     if (!res.ok) throw new Error("Could not reach data server");
     return res.json();
   },
-  saveTransactions:  (d: Transaction[], targetEntity?: string)           => post("/transactions",   payload(d, targetEntity)),
-  saveMeta:          (d: AppData["meta"], targetEntity?: string)          => post("/meta",           payload(d, targetEntity)),
-  saveExcluded:      (d: string[])                                        => post("/excluded",       payload(d)),
-  saveOverrides:     (d: Record<string, Category>)                        => post("/overrides",      payload(d)),
-  saveAdjustments:   (d: Transaction[])                                   => post("/adjustments",    payload(d)),
-  saveManualEntries: (d: ManualEntry[])                                   => post("/manual-entries", payload(d)),
-  saveReconStatus:   (d: ReconStatus)                                     => post("/recon-status",   payload(d)),
-  saveRules:         (d: ClassificationRule[])                            => post("/rules",           payload(d)),
+  saveTransactions:  (d: Transaction[], targetEntity?: string)            => post("/transactions",   payload(d, targetEntity)),
+  saveMeta:          (d: AppData["meta"], targetEntity?: string)           => post("/meta",           payload(d, targetEntity)),
+  saveExcluded:      (d: string[])                                         => post("/excluded",       payload(d)),
+  saveOverrides:     (d: Record<string, Category>)                         => post("/overrides",      payload(d)),
+  saveAdjustments:   (d: Transaction[])                                    => post("/adjustments",    payload(d)),
+  saveManualEntries: (d: ManualEntry[])                                    => post("/manual-entries", payload(d)),
+  saveReconStatus:   (d: ReconStatus)                                      => post("/recon-status",   payload(d)),
+  saveRules:         (d: ClassificationRule[], targetEntity?: string)      => post("/rules",          payload(d, targetEntity)),
+  saveBankBalances:  (d: BankBalance[], targetEntity?: string)             => post("/bank-balances",  payload(d, targetEntity)),
+  saveSubsidiaries:  (d: Subsidiary[])                                     => post("/subsidiaries",   payload(d)),
   clearAll: async (): Promise<{ ok: boolean }> => {
     const res = await fetch(`${BASE}/data`, { method: "DELETE" });
     if (!res.ok) throw new Error("Clear failed");

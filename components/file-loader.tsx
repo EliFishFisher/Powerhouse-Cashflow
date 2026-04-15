@@ -4,27 +4,36 @@ import { useCallback, useState } from "react";
 import { parseWorkbook, parseSVBCsv, parseGenericCsv, mergeTxns } from "@/lib/parsers";
 import { apiClient } from "@/lib/api-client";
 import { ENTITIES } from "@/lib/constants";
-import type { Transaction } from "@/lib/types";
+import { BankBalanceModal } from "@/components/bank-balance-modal";
+import type { Transaction, BankBalance, Subsidiary } from "@/lib/types";
 import type { CompanyEntry } from "@/hooks/use-app-data";
 
 interface Props {
-  transactions: Transaction[];
-  meta:         { files: string[]; totalTxns: number };
-  serverOk:     boolean;
-  isAdmin:      boolean;
-  companies:    CompanyEntry[];
-  onLoaded:     () => void;
-  onClear:      () => void;
+  transactions:  Transaction[];
+  meta:          { files: string[]; totalTxns: number };
+  serverOk:      boolean;
+  isAdmin:       boolean;
+  companies:     CompanyEntry[];
+  subsidiaries:  Subsidiary[];
+  onLoaded:      () => void;
+  onClear:       () => void;
+  onSaveBankBalances?: (balances: BankBalance[], targetEntity: string) => Promise<void>;
 }
 
 const COMPANY_ENTITIES = ENTITIES.filter(e => e !== "Consolidated");
 
-export function FileLoader({ transactions, meta, serverOk, isAdmin, companies, onLoaded, onClear }: Props) {
-  const [dragging,      setDragging]      = useState(false);
-  const [loading,       setLoading]       = useState(false);
-  const [targetEntity,  setTargetEntity]  = useState<string>(COMPANY_ENTITIES[0] ?? "");
-  const [pendingFiles,  setPendingFiles]  = useState<File[] | null>(null);
-  const [status,        setStatus]        = useState<{ added: number; dupes: number; total: number; errors: string[]; step?: string } | null>(null);
+export function FileLoader({
+  transactions, meta, serverOk, isAdmin, companies, subsidiaries,
+  onLoaded, onClear, onSaveBankBalances,
+}: Props) {
+  const [dragging,     setDragging]     = useState(false);
+  const [loading,      setLoading]      = useState(false);
+  const [targetEntity, setTargetEntity] = useState<string>(COMPANY_ENTITIES[0] ?? "");
+  const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
+  const [pendingBals,  setPendingBals]  = useState<{ balances: BankBalance[]; entity: string } | null>(null);
+  const [status, setStatus] = useState<{
+    added: number; dupes: number; total: number; errors: string[]; step?: string;
+  } | null>(null);
 
   const processFiles = useCallback(async (files: File[], entityOverride?: string) => {
     const entity = entityOverride ?? targetEntity;
@@ -32,19 +41,31 @@ export function FileLoader({ transactions, meta, serverOk, isAdmin, companies, o
     setStatus({ added: 0, dupes: 0, total: 0, errors: [], step: `Reading ${files.length} file(s)…` });
 
     try {
-      let allNew: Transaction[] = [];
-      const errors: string[] = [];
+      let allNew:    Transaction[]  = [];
+      let allBals:   BankBalance[]  = [];
+      const errors: string[]        = [];
 
       for (const file of files) {
         const isXlsx = /\.(xlsx|xls)$/i.test(file.name);
         const isCsv  = /\.csv$/i.test(file.name);
-        if (!isXlsx && !isCsv) { errors.push(`${file.name}: unsupported format (use .xlsx or .csv)`); continue; }
+        if (!isXlsx && !isCsv) {
+          errors.push(`${file.name}: unsupported format (use .xlsx or .csv)`);
+          continue;
+        }
         try {
           if (isXlsx) {
             const buf = await file.arrayBuffer();
-            const { txns: parsed, diagnostics } = parseWorkbook(new Uint8Array(buf), file.name);
-            if (parsed.length === 0 && diagnostics.length > 0) {
-              for (const d of diagnostics) {
+            const { txns: parsed, diagnostics, balanceReports } = parseWorkbook(
+              new Uint8Array(buf), file.name, subsidiaries,
+            );
+
+            // Collect balance reports for the modal
+            if (balanceReports.length > 0) allBals = allBals.concat(balanceReports);
+
+            // Diagnostics for unrecognised sheets
+            for (const d of diagnostics) {
+              if (d.detectedFormat === "Balance Report (Poalim Foreign)") continue; // handled separately
+              if (parsed.length === 0) {
                 const preview = d.firstRows
                   .map((r, i) => `Row ${i}: [${r.filter(Boolean).join(" | ")}]`)
                   .join("\n");
@@ -56,9 +77,9 @@ export function FileLoader({ transactions, meta, serverOk, isAdmin, companies, o
             const text = await file.text();
             const firstLine = text.slice(0, 100);
             if (firstLine.includes("From:") || text.split("\n")[1]?.includes("Bank ID")) {
-              allNew = allNew.concat(parseSVBCsv(text, file.name));
+              allNew = allNew.concat(parseSVBCsv(text, file.name, subsidiaries));
             } else {
-              const parsed = parseGenericCsv(text, file.name);
+              const parsed = parseGenericCsv(text, file.name, subsidiaries);
               if (parsed.length > 0) {
                 allNew = allNew.concat(parsed);
               } else {
@@ -71,7 +92,15 @@ export function FileLoader({ transactions, meta, serverOk, isAdmin, companies, o
         }
       }
 
-      if (allNew.length === 0 && errors.length === 0) {
+      // If we only got balance reports (no transactions), finish early and show modal
+      if (allNew.length === 0 && allBals.length > 0) {
+        setStatus({ added: 0, dupes: 0, total: 0, errors });
+        setLoading(false);
+        setPendingBals({ balances: allBals, entity });
+        return;
+      }
+
+      if (allNew.length === 0 && errors.length === 0 && allBals.length === 0) {
         errors.push("No transactions found. Please upload a Bank Leumi .xlsx/.xls export or SVB .csv export.");
       }
 
@@ -96,14 +125,20 @@ export function FileLoader({ transactions, meta, serverOk, isAdmin, companies, o
       };
 
       const saveEntity = isAdmin ? entity : undefined;
-      setStatus({ added, dupes, total: merged.length, errors, step: `Saving ${merged.length} transactions to server…` });
+      setStatus({ added, dupes, total: merged.length, errors, step: `Saving ${merged.length} transactions…` });
 
       await apiClient.saveTransactions(merged, saveEntity);
       await apiClient.saveMeta(newMeta, saveEntity);
 
       setStatus({ added, dupes, total: merged.length, errors });
+
+      // Show balance modal alongside the success status if balance reports also found
+      if (allBals.length > 0) {
+        setPendingBals({ balances: allBals, entity });
+      }
+
       await new Promise(r => setTimeout(r, 1500));
-      onLoaded();
+      if (allBals.length === 0) onLoaded();
 
     } catch (e) {
       const msg = (e as Error).message ?? "Unknown error";
@@ -111,32 +146,55 @@ export function FileLoader({ transactions, meta, serverOk, isAdmin, companies, o
     } finally {
       setLoading(false);
     }
-  }, [transactions, meta, isAdmin, targetEntity, companies, onLoaded]);
+  }, [transactions, meta, isAdmin, targetEntity, companies, subsidiaries, onLoaded]);
+
+  const handleBalanceConfirm = useCallback(async (bals: BankBalance[], entity: string) => {
+    setPendingBals(null);
+    if (onSaveBankBalances) {
+      await onSaveBankBalances(bals, entity);
+    }
+    onLoaded();
+  }, [onSaveBankBalances, onLoaded]);
+
+  const handleBalanceDismiss = useCallback(() => {
+    setPendingBals(null);
+    onLoaded();
+  }, [onLoaded]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setDragging(false);
     const files = [...e.dataTransfer.files];
-    if (isAdmin) {
-      setPendingFiles(files);
-    } else {
-      processFiles(files);
-    }
+    if (isAdmin) setPendingFiles(files);
+    else processFiles(files);
   }, [processFiles, isAdmin]);
 
   const onInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const files = [...e.target.files];
-      if (isAdmin) {
-        setPendingFiles(files);
-      } else {
-        processFiles(files);
-      }
+      if (isAdmin) setPendingFiles(files);
+      else processFiles(files);
     }
     e.target.value = "";
   };
 
+  // Build the entity list for admin picker: parent companies + subsidiaries
+  const entityList = [
+    ...COMPANY_ENTITIES,
+    ...subsidiaries.map(s => s.name),
+  ].filter((v, i, a) => a.indexOf(v) === i);
+
   return (
     <div className="border-b border-slate-200 bg-white px-5 py-3">
+
+      {/* Bank Balance modal */}
+      {pendingBals && (
+        <BankBalanceModal
+          balances={pendingBals.balances}
+          targetEntity={pendingBals.entity}
+          onConfirm={handleBalanceConfirm}
+          onDismiss={handleBalanceDismiss}
+        />
+      )}
 
       {/* Company picker modal — shown after dropping a file as admin */}
       {pendingFiles && isAdmin && (
@@ -144,19 +202,27 @@ export function FileLoader({ transactions, meta, serverOk, isAdmin, companies, o
           <div className="rounded-xl bg-white shadow-2xl p-6 w-80">
             <h3 className="text-sm font-bold text-slate-700 mb-1">Upload for which company?</h3>
             <p className="text-xs text-slate-400 mb-4">{pendingFiles.length} file{pendingFiles.length !== 1 ? "s" : ""} selected</p>
-            <div className="flex flex-col gap-2">
-              {COMPANY_ENTITIES.map(e => (
-                <button key={e}
-                  onClick={() => {
-                    setTargetEntity(e);
-                    const files = pendingFiles;
-                    setPendingFiles(null);
-                    processFiles(files, e);
-                  }}
-                  className="rounded-lg px-4 py-2.5 text-sm font-semibold bg-slate-100 hover:bg-blue-600 hover:text-white transition-colors text-slate-700 text-left">
-                  {e}
-                </button>
-              ))}
+            <div className="flex flex-col gap-2 max-h-72 overflow-y-auto">
+              {entityList.map(e => {
+                const isSub = subsidiaries.some(s => s.name === e);
+                return (
+                  <button key={e}
+                    onClick={() => {
+                      setTargetEntity(e);
+                      const files = pendingFiles;
+                      setPendingFiles(null);
+                      // For subsidiaries, resolve to parent for saving
+                      const saveTarget = isSub
+                        ? (subsidiaries.find(s => s.name === e)?.parentEntity ?? e)
+                        : e;
+                      processFiles(files, saveTarget);
+                    }}
+                    className="rounded-lg px-4 py-2.5 text-sm font-semibold bg-slate-100 hover:bg-blue-600 hover:text-white transition-colors text-slate-700 text-left flex items-center gap-2">
+                    {isSub && <span className="text-[10px] bg-purple-100 text-purple-600 px-1.5 rounded font-bold">SUB</span>}
+                    {e}
+                  </button>
+                );
+              })}
             </div>
             <button onClick={() => setPendingFiles(null)}
               className="mt-4 w-full text-xs text-slate-400 hover:text-slate-600 transition-colors">
@@ -184,7 +250,7 @@ export function FileLoader({ transactions, meta, serverOk, isAdmin, companies, o
                 : "Drop bank extract files here or click to browse"}
             </div>
             <div className="mt-0.5 text-xs text-slate-400">
-              Accepts .xlsx / .xls (Bank Leumi) · .csv (SVB) · Auto-detects currency
+              Accepts .xlsx / .xls (Bank Leumi / Hapoalim) · .csv (SVB) · Balance reports auto-detected
             </div>
             <div className="mt-0.5 text-xs font-semibold">
               {serverOk

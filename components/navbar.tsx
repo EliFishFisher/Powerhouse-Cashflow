@@ -4,8 +4,10 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { FxTicker } from "@/components/fx-ticker";
+import { SubsidiarySettings } from "@/components/subsidiary-settings";
 import { createBrowserClient } from "@supabase/ssr";
 import { cn } from "@/lib/utils";
+import { useAppData } from "@/hooks/use-app-data";
 
 const NAV_TABS = [
   { label: "Cashflow",     href: "/cashflow"     },
@@ -18,6 +20,8 @@ const NAV_TABS = [
 export function Navbar() {
   const pathname = usePathname();
   const router   = useRouter();
+  const { isAdmin, data, saveSubsidiaries } = useAppData();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const handleLogout = async () => {
     const supabase = createBrowserClient(
@@ -76,6 +80,17 @@ export function Navbar() {
         {/* Server status — fetched client-side */}
         <ServerStatus />
 
+        {/* Settings gear — admin only */}
+        {isAdmin && (
+          <button
+            onClick={() => setSettingsOpen(true)}
+            title="Subsidiary settings"
+            className="rounded px-2 py-1 text-[13px] text-slate-400 border border-slate-700 hover:border-slate-500 hover:text-white transition-colors"
+          >
+            ⚙️
+          </button>
+        )}
+
         {/* Logout */}
         <button
           onClick={handleLogout}
@@ -84,6 +99,15 @@ export function Navbar() {
           Log out
         </button>
       </div>
+
+      {/* Subsidiary settings modal */}
+      {settingsOpen && isAdmin && (
+        <SubsidiarySettings
+          subsidiaries={data.subsidiaries}
+          onSave={saveSubsidiaries}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </header>
   );
 }
@@ -119,5 +143,3 @@ function ServerStatus() {
     </div>
   );
 }
-
-// useState and useEffect are imported at the top of this file

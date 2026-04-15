@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "@/lib/api-client";
-import type { AppData, FxRates } from "@/lib/types";
+import type { AppData, FxRates, BankBalance, Subsidiary } from "@/lib/types";
 import type { Category } from "@/lib/constants";
+import type { ClassificationRule } from "@/lib/types";
 
 export interface CompanyEntry {
   entity_name: string;
@@ -20,6 +21,8 @@ const EMPTY: AppData = {
   manualEntries: [],
   reconStatus:   { lastRun: null, errorCount: 0, warningCount: 0, issues: [] },
   rules:         [],
+  bankBalances:  [],
+  subsidiaries:  [],
 };
 
 function mergeCompanyData(companies: CompanyEntry[]): AppData {
@@ -27,9 +30,14 @@ function mergeCompanyData(companies: CompanyEntry[]): AppData {
     transactions:  companies.flatMap(c => c.data.transactions  ?? []),
     adjustments:   companies.flatMap(c => c.data.adjustments   ?? []),
     manualEntries: companies.flatMap(c => c.data.manualEntries ?? []),
-    rules:         companies[0]?.data.rules         ?? [],
+    // Each company has its own rules — merge all of them
+    rules:         companies.flatMap(c => c.data.rules         ?? []),
     excluded:      companies.flatMap(c => c.data.excluded      ?? []),
     overrides:     Object.assign({}, ...companies.map(c => c.data.overrides ?? {})),
+    // Bank balances merged from all companies
+    bankBalances:  companies.flatMap(c => c.data.bankBalances  ?? []),
+    // Subsidiaries: take from whichever company row has them (admin row typically)
+    subsidiaries:  companies.flatMap(c => c.data.subsidiaries  ?? []),
     meta: {
       files:     companies.flatMap(c => c.data.meta?.files ?? []),
       totalTxns: companies.reduce((s, c) => s + (c.data.meta?.totalTxns ?? 0), 0),
@@ -68,6 +76,8 @@ export function useAppData() {
         if (!d.adjustments)   d.adjustments   = [];
         if (!d.manualEntries) d.manualEntries = [];
         if (!d.rules)         d.rules         = [];
+        if (!d.bankBalances)  d.bankBalances  = [];
+        if (!d.subsidiaries)  d.subsidiaries  = [];
         setData(d);
         setExcluded(new Set(d.excluded));
         setOverrides(d.overrides);
@@ -124,10 +134,57 @@ export function useAppData() {
     await apiClient.saveTransactions(txns, targetEntity);
   }, []);
 
-  const saveRules = useCallback(async (rules: AppData["rules"]) => {
-    setData(d => ({ ...d, rules }));
-    await apiClient.saveRules(rules);
-  }, []);
+  // ── Rules — per entity for admin ──────────────────────────────────────────
+  // When targetEntity is provided (admin), saves only to that company's row.
+  // The local state is updated optimistically.
+  const saveRules = useCallback(async (rules: ClassificationRule[], targetEntity?: string) => {
+    if (isAdmin && targetEntity && companies.length > 0) {
+      // Optimistic update: replace the targeted company's rules in local state
+      const updatedCompanies = companies.map(c =>
+        c.entity_name === targetEntity ? { ...c, data: { ...c.data, rules } } : c
+      );
+      setCompanies(updatedCompanies);
+      setData(mergeCompanyData(updatedCompanies));
+    } else {
+      setData(d => ({ ...d, rules }));
+    }
+    await apiClient.saveRules(rules, targetEntity);
+  }, [isAdmin, companies]);
+
+  // ── Bank Balances ─────────────────────────────────────────────────────────
+  const saveBankBalances = useCallback(async (
+    incoming: BankBalance[],
+    targetEntity?: string,
+  ) => {
+    // Merge incoming with existing, deduplicating by uid
+    const existing = targetEntity
+      ? (companies.find(c => c.entity_name === targetEntity)?.data.bankBalances ?? [])
+      : data.bankBalances;
+    const map = new Map(existing.map(b => [b.uid, b]));
+    for (const b of incoming) map.set(b.uid, b);
+    const merged = [...map.values()];
+
+    if (isAdmin && targetEntity) {
+      const updatedCompanies = companies.map(c =>
+        c.entity_name === targetEntity ? { ...c, data: { ...c.data, bankBalances: merged } } : c
+      );
+      setCompanies(updatedCompanies);
+      setData(mergeCompanyData(updatedCompanies));
+    } else {
+      setData(d => ({ ...d, bankBalances: merged }));
+    }
+    await apiClient.saveBankBalances(merged, targetEntity);
+  }, [isAdmin, companies, data.bankBalances]);
+
+  // ── Subsidiaries ──────────────────────────────────────────────────────────
+  const saveSubsidiaries = useCallback(async (subs: Subsidiary[]) => {
+    setData(d => ({ ...d, subsidiaries: subs }));
+    if (isAdmin && companies.length > 0) {
+      // Persist subsidiaries in the admin's own row (first company = Consolidated)
+      // We target the admin row by not passing targetEntity (saves to admin's own user_id)
+    }
+    await apiClient.saveSubsidiaries(subs);
+  }, [isAdmin, companies]);
 
   const clearAll = useCallback(async () => {
     await apiClient.clearAll();
@@ -141,6 +198,7 @@ export function useAppData() {
     excluded, overrides,
     isAdmin, companies,
     toggleExclude, setCatOverride, removeCatOverride,
-    saveTransactions, saveRules, clearAll, refresh,
+    saveTransactions, saveRules, saveBankBalances, saveSubsidiaries,
+    clearAll, refresh,
   };
 }

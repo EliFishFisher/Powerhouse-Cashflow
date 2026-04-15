@@ -63,6 +63,8 @@ export async function loadAppData(
     rules:         data.rules         ?? [],
     meta:          data.meta          ?? { files: [], totalTxns: 0 },
     reconStatus:   data.recon_status  ?? emptyReconStatus(),
+    bankBalances:  data.bank_balances ?? [],
+    subsidiaries:  data.subsidiaries  ?? [],
   };
 }
 
@@ -89,6 +91,8 @@ export async function loadAllAppData(
       rules:         row.rules         ?? [],
       meta:          row.meta          ?? { files: [], totalTxns: 0 },
       reconStatus:   row.recon_status  ?? emptyReconStatus(),
+      bankBalances:  row.bank_balances ?? [],
+      subsidiaries:  row.subsidiaries  ?? [],
     },
   }));
 }
@@ -103,6 +107,8 @@ type DbRow = {
   rules?:          unknown;
   meta?:           unknown;
   recon_status?:   unknown;
+  bank_balances?:  unknown;
+  subsidiaries?:   unknown;
 };
 
 export async function saveAppDataField(
@@ -122,6 +128,7 @@ export async function clearAppData(
   supabase: AnySupabaseClient,
   userId:   string,
 ) {
+  // Preserve subsidiaries config (global setting) and bank balances are intentionally cleared
   await supabase
     .from("app_data")
     .update({
@@ -133,6 +140,8 @@ export async function clearAppData(
       rules:         [],
       meta:          { files: [], totalTxns: 0 },
       recon_status:  emptyReconStatus(),
+      bank_balances: [],
+      // subsidiaries intentionally NOT cleared — config should survive data wipes
     })
     .eq("user_id", userId);
 }
@@ -150,6 +159,8 @@ export async function clearAllAppData(supabase: AnySupabaseClient) {
       rules:         [],
       meta:          { files: [], totalTxns: 0 },
       recon_status:  emptyReconStatus(),
+      bank_balances: [],
+      // subsidiaries intentionally NOT cleared — config should survive data wipes
     })
     .neq("user_id", "00000000-0000-0000-0000-000000000000"); // matches all rows
 }
@@ -169,5 +180,7 @@ export function emptyAppData(): AppData {
     rules:         [],
     meta:          { files: [], totalTxns: 0 },
     reconStatus:   emptyReconStatus(),
+    bankBalances:  [],
+    subsidiaries:  [],
   };
 }

@@ -38,8 +38,12 @@ const inputStyle: React.CSSProperties = {
 
 export default function RulesPage() {
   const {
-    data, loading, serverOk, fxRates, excluded, overrides, saveRules,
+    data, loading, serverOk, fxRates, excluded, overrides,
+    isAdmin, companies, saveRules,
   } = useAppData();
+
+  // Admin: which company's rules are being viewed/edited
+  const [activeEntity, setActiveEntity] = useState<string>("All");
 
   const [search,    setSearch]    = useState("");
   const [catFilter, setCatFilter] = useState("All");
@@ -52,9 +56,16 @@ export default function RulesPage() {
   const [suggestOpen, setSuggestOpen] = useState(true);
 
   // ── Derived ───────────────────────────────────────────────────────────────
+  // For admin: look up rules from the targeted company's row directly
+  const rulesForEntity = useMemo(() => {
+    if (!isAdmin || activeEntity === "All") return data.rules;
+    const co = companies.find(c => c.entity_name === activeEntity);
+    return co?.data.rules ?? [];
+  }, [isAdmin, activeEntity, companies, data.rules]);
+
   const sorted = useMemo(
-    () => [...data.rules].sort((a, b) => a.priority - b.priority),
-    [data.rules],
+    () => [...rulesForEntity].sort((a, b) => a.priority - b.priority),
+    [rulesForEntity],
   );
 
   const filtered = useMemo(() => {
@@ -71,15 +82,16 @@ export default function RulesPage() {
     return rs;
   }, [sorted, catFilter, search]);
 
-  // Live match counts against active transactions
-  const allTxns = useMemo(
-    () =>
-      computeActiveTxns(
-        data.transactions, data.adjustments,
-        excluded, overrides, [], fxRates,
-      ),
-    [data.transactions, data.adjustments, excluded, overrides, fxRates],
-  );
+  // Live match counts against active transactions (scoped to active entity if selected)
+  const allTxns = useMemo(() => {
+    const all = computeActiveTxns(
+      data.transactions, data.adjustments, excluded, overrides, [], fxRates,
+    );
+    if (isAdmin && activeEntity !== "All") {
+      return all.filter(t => t.entity === activeEntity);
+    }
+    return all;
+  }, [data.transactions, data.adjustments, excluded, overrides, fxRates, isAdmin, activeEntity]);
 
   const matchCounts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -147,6 +159,9 @@ export default function RulesPage() {
     setEditId(null);
   }, []);
 
+  // The entity whose row we are currently editing (undefined = admin's own row)
+  const saveTarget = isAdmin && activeEntity !== "All" ? activeEntity : undefined;
+
   const handleSave = useCallback(async () => {
     const keywords = form.keywords
       .split(",")
@@ -160,31 +175,31 @@ export default function RulesPage() {
     try {
       let next: ClassificationRule[];
       if (editId) {
-        next = data.rules.map(r =>
+        next = rulesForEntity.map(r =>
           r.uid === editId
             ? { ...r, label: form.label.trim(), keywords, field: form.field, cat: form.cat, enabled: form.enabled, entities: form.entities }
             : r,
         );
       } else {
-        next = [...data.rules, makeClassificationRule({
+        next = [...rulesForEntity, makeClassificationRule({
           label: form.label.trim(), keywords, field: form.field, cat: form.cat, enabled: form.enabled, entities: form.entities,
         })];
       }
-      await saveRules(next);
+      await saveRules(next, saveTarget);
       closePanel();
     } finally {
       setSaving(false);
     }
-  }, [form, editId, data.rules, saveRules, closePanel]);
+  }, [form, editId, rulesForEntity, saveRules, saveTarget, closePanel]);
 
   const handleToggle = useCallback(async (uid: string) => {
-    await saveRules(data.rules.map(r => r.uid === uid ? { ...r, enabled: !r.enabled } : r));
-  }, [data.rules, saveRules]);
+    await saveRules(rulesForEntity.map(r => r.uid === uid ? { ...r, enabled: !r.enabled } : r), saveTarget);
+  }, [rulesForEntity, saveRules, saveTarget]);
 
   const handleDelete = useCallback(async (uid: string) => {
-    await saveRules(data.rules.filter(r => r.uid !== uid));
+    await saveRules(rulesForEntity.filter(r => r.uid !== uid), saveTarget);
     setDeleteId(null);
-  }, [data.rules, saveRules]);
+  }, [rulesForEntity, saveRules, saveTarget]);
 
   const handleMove = useCallback(async (uid: string, dir: "up" | "down") => {
     const arr = [...sorted];
@@ -194,13 +209,14 @@ export default function RulesPage() {
     const pa = arr[idx].priority;
     const pb = arr[swap].priority;
     await saveRules(
-      data.rules.map(r => {
+      rulesForEntity.map(r => {
         if (r.uid === arr[idx].uid)  return { ...r, priority: pb };
         if (r.uid === arr[swap].uid) return { ...r, priority: pa };
         return r;
       }),
+      saveTarget,
     );
-  }, [sorted, data.rules, saveRules]);
+  }, [sorted, rulesForEntity, saveRules, saveTarget]);
 
   // ── Guard states ──────────────────────────────────────────────────────────
   if (loading) return (
@@ -223,7 +239,50 @@ export default function RulesPage() {
     <div className="flex h-full flex-col" style={{ background: "#f8fafc" }}>
 
       {/* ── Toolbar ────────────────────────────────────────────────────────── */}
-      <div className="shrink-0 flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-5 py-3">
+      <div className="shrink-0 flex flex-col border-b border-slate-200 bg-white">
+
+        {/* Company tabs — admin only */}
+        {isAdmin && companies.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 0, borderBottom: "1px solid #f1f5f9", paddingLeft: 20, paddingRight: 20 }}>
+            {[{ label: "All Companies", value: "All" }, ...COMPANY_ENTITIES.map(e => ({ label: e, value: e }))].map(tab => {
+              const isActive = activeEntity === tab.value;
+              const count    = tab.value === "All"
+                ? data.rules.length
+                : (companies.find(c => c.entity_name === tab.value)?.data.rules ?? []).length;
+              return (
+                <button
+                  key={tab.value}
+                  onClick={() => setActiveEntity(tab.value)}
+                  style={{
+                    height: 36, padding: "0 14px", fontSize: 11, fontWeight: isActive ? 700 : 500,
+                    background: "none", border: "none", cursor: "pointer",
+                    borderBottom: `2px solid ${isActive ? "#3b82f6" : "transparent"}`,
+                    color: isActive ? "#1d4ed8" : "#64748b",
+                    display: "flex", alignItems: "center", gap: 6, transition: "all 0.15s",
+                    marginBottom: -1,
+                  }}
+                >
+                  {tab.label}
+                  <span style={{
+                    fontSize: 9, fontWeight: 700,
+                    background: isActive ? "#dbeafe" : "#f1f5f9",
+                    color: isActive ? "#1d4ed8" : "#94a3b8",
+                    borderRadius: 999, padding: "1px 6px",
+                  }}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+            {activeEntity !== "All" && (
+              <span style={{ marginLeft: "auto", fontSize: 10, color: "#94a3b8", fontStyle: "italic" }}>
+                Editing rules for <strong style={{ color: "#475569" }}>{activeEntity}</strong> only
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3 px-5 py-3">
         <div style={{ position: "relative" }}>
           <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: "#94a3b8", pointerEvents: "none" }}>🔍</span>
           <input
@@ -255,7 +314,8 @@ export default function RulesPage() {
         }}>
           <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Add Rule
         </button>
-      </div>
+        </div>{/* end inner flex row */}
+      </div>{/* end toolbar */}
 
       {/* ── Suggested Rules ────────────────────────────────────────────────── */}
       {suggestions.length > 0 && (
@@ -610,7 +670,7 @@ export default function RulesPage() {
 
       {/* ── Delete confirmation ─────────────────────────────────────────────── */}
       {deleteId && (() => {
-        const rule = data.rules.find(r => r.uid === deleteId);
+        const rule = rulesForEntity.find(r => r.uid === deleteId);
         return (
           <>
             <div onClick={() => setDeleteId(null)} style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(15,23,42,0.5)", backdropFilter: "blur(2px)" }} />
