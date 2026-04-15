@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { FxTicker } from "@/components/fx-ticker";
+import { createBrowserClient } from "@supabase/ssr";
 import { cn } from "@/lib/utils";
 
 const NAV_TABS = [
@@ -16,6 +17,16 @@ const NAV_TABS = [
 
 export function Navbar() {
   const pathname = usePathname();
+  const router   = useRouter();
+
+  const handleLogout = async () => {
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
 
   return (
     <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center border-b border-slate-800 bg-slate-950 px-5">
@@ -64,6 +75,14 @@ export function Navbar() {
 
         {/* Server status — fetched client-side */}
         <ServerStatus />
+
+        {/* Logout */}
+        <button
+          onClick={handleLogout}
+          className="rounded px-2 py-1 text-[9px] font-semibold text-slate-400 border border-slate-700 hover:border-slate-500 hover:text-white transition-colors"
+        >
+          Log out
+        </button>
       </div>
     </header>
   );
