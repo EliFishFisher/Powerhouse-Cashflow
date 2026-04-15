@@ -1,0 +1,107 @@
+[2026-04-10T07:59:30.478Z] === CorNeat Flow starting ===
+[2026-04-10T07:59:30.486Z] OS: win32 10.0.26200
+[2026-04-10T07:59:30.487Z] Node: v24.14.0
+[2026-04-10T07:59:30.488Z] ROOT: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2
+[2026-04-10T07:59:30.489Z] V2_DIR: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2\corneat-flow-v2
+[2026-04-10T07:59:30.490Z] Checking for build at: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2\corneat-flow-v2\.next
+[2026-04-10T07:59:30.492Z] .next folder found — proceeding.
+[2026-04-10T07:59:30.494Z] Starting data server on port 3001...
+[2026-04-10T07:59:30.533Z] Data server spawned (PID: 9368)
+[2026-04-10T07:59:30.535Z] Starting Next.js on port 3000...
+[2026-04-10T07:59:30.633Z] Next.js spawned (PID: 2288)
+[2026-04-10T07:59:30.635Z] Polling for readiness at http://localhost:3000...
+[2026-04-10T07:59:32.651Z] Still waiting... attempt 0
+[2026-04-10T07:59:38.193Z] Got response: HTTP 307
+[2026-04-10T07:59:38.194Z] App is ready — opening browser.
+[2026-04-10T08:20:27.143Z] === CorNeat Flow starting ===
+[2026-04-10T08:20:27.149Z] OS: win32 10.0.26200
+[2026-04-10T08:20:27.150Z] Node: v24.14.0
+[2026-04-10T08:20:27.151Z] ROOT: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2
+[2026-04-10T08:20:27.152Z] V2_DIR: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2\corneat-flow-v2
+[2026-04-10T08:20:27.154Z] Checking for build at: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2\corneat-flow-v2\.next
+[2026-04-10T08:20:27.155Z] .next folder found — proceeding.
+[2026-04-10T08:20:27.156Z] Starting data server on port 3001...
+[2026-04-10T08:20:27.180Z] Data server spawned (PID: 22200)
+[2026-04-10T08:20:27.181Z] Starting Next.js on port 3000...
+[2026-04-10T08:20:27.225Z] Next.js spawned (PID: 25652)
+[2026-04-10T08:20:27.227Z] Polling for readiness at http://localhost:3000...
+[2026-04-10T08:20:29.229Z] Still waiting... attempt 0
+[2026-04-10T08:20:29.411Z] Got response: HTTP 307
+[2026-04-10T08:20:29.413Z] App is ready — opening browser.
+[2026-04-10T12:45:42.552Z] === CorNeat Flow starting ===
+[2026-04-10T12:45:42.553Z] OS: win32 10.0.26200
+[2026-04-10T12:45:42.553Z] Node: v24.14.0
+[2026-04-10T12:45:42.554Z] ROOT: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2
+[2026-04-10T12:45:42.554Z] V2_DIR: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2\corneat-flow-v2
+[2026-04-10T12:45:42.555Z] Checking for build at: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2\corneat-flow-v2\.next
+[2026-04-10T12:45:42.555Z] .next folder found — proceeding.
+[2026-04-10T12:45:42.555Z] Starting data server on port 3001...
+[2026-04-10T12:45:42.562Z] Data server spawned (PID: 15324)
+[2026-04-10T12:45:42.563Z] Starting Next.js on port 3000...
+[2026-04-10T12:45:42.575Z] Next.js spawned (PID: 3004)
+[2026-04-10T12:45:42.575Z] Polling for readiness at http://localhost:3000...
+[2026-04-10T12:45:44.582Z] Still waiting... attempt 0
+[2026-04-10T12:45:44.773Z] Got response: HTTP 307
+[2026-04-10T12:45:44.774Z] App is ready — opening browser.
+[2026-04-10T12:50:20.678Z] === CorNeat Flow starting ===
+[2026-04-10T12:50:20.679Z] OS: win32 10.0.26200
+[2026-04-10T12:50:20.679Z] Node: v24.14.0
+[2026-04-10T12:50:20.679Z] ROOT: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2
+[2026-04-10T12:50:20.680Z] V2_DIR: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2\corneat-flow-v2
+[2026-04-10T12:50:20.680Z] Checking for build at: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2\corneat-flow-v2\.next
+[2026-04-10T12:50:20.681Z] .next folder found — proceeding.
+[2026-04-10T12:50:20.681Z] Starting data server on port 3001...
+[2026-04-10T12:50:20.687Z] Data server spawned (PID: 24488)
+[2026-04-10T12:50:20.687Z] Starting Next.js on port 3000...
+[2026-04-10T12:50:20.701Z] Next.js spawned (PID: 18352)
+[2026-04-10T12:50:20.701Z] Polling for readiness at http://localhost:3000...
+[2026-04-10T12:50:22.715Z] Still waiting... attempt 0
+[2026-04-10T12:50:22.745Z] Got response: HTTP 307
+[2026-04-10T12:50:22.747Z] App is ready — opening browser.
+[2026-04-10T13:04:53.547Z] === CorNeat Flow starting ===
+[2026-04-10T13:04:53.548Z] OS: win32 10.0.26200
+[2026-04-10T13:04:53.548Z] Node: v24.14.0
+[2026-04-10T13:04:53.548Z] ROOT: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2
+[2026-04-10T13:04:53.548Z] V2_DIR: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2\corneat-flow-v2
+[2026-04-10T13:04:53.549Z] Checking for build at: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2\corneat-flow-v2\.next
+[2026-04-10T13:04:53.549Z] .next folder found — proceeding.
+[2026-04-10T13:04:53.549Z] Starting data server on port 3001...
+[2026-04-10T13:04:53.556Z] Data server spawned (PID: 15280)
+[2026-04-10T13:04:53.556Z] Starting Next.js on port 3000...
+[2026-04-10T13:04:53.567Z] Next.js spawned (PID: 19480)
+[2026-04-10T13:04:53.568Z] Polling for readiness at http://localhost:3000...
+[2026-04-10T13:04:55.574Z] Still waiting... attempt 0
+[2026-04-10T13:04:55.623Z] Got response: HTTP 307
+[2026-04-10T13:04:55.623Z] App is ready — opening browser.
+[2026-04-10T22:13:05.828Z] === Powerhouse CashFlow starting ===
+[2026-04-10T22:13:05.830Z] OS: win32 10.0.26200
+[2026-04-10T22:13:05.830Z] Node: v24.14.0
+[2026-04-10T22:13:05.830Z] ROOT: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2
+[2026-04-10T22:13:05.830Z] V2_DIR: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2\corneat-flow-v2
+[2026-04-10T22:13:05.831Z] Checking for build at: C:\Users\elija\OneDrive\Work\08 Claude workspace\corneat-flow-v2_2\corneat-flow-v2\.next
+[2026-04-10T22:13:05.831Z] .next folder found — proceeding.
+[2026-04-10T22:13:05.832Z] Starting data server on port 3001...
+[2026-04-10T22:13:05.837Z] Data server spawned (PID: 31032)
+[2026-04-10T22:13:05.839Z] Starting Next.js on port 3000...
+[2026-04-10T22:13:05.856Z] Next.js spawned (PID: 1876)
+[2026-04-10T22:13:05.856Z] Polling for readiness at http://localhost:3000...
+[2026-04-10T22:13:07.861Z] Still waiting... attempt 0
+[2026-04-10T22:13:08.007Z] Got response: HTTP 307
+[2026-04-10T22:13:08.007Z] App is ready — opening browser.
+[2026-04-10T22:43:45.186Z] === Powerhouse CashFlow starting ===
+[2026-04-10T22:43:45.187Z] OS: win32 10.0.26200
+[2026-04-10T22:43:45.187Z] Node: v24.14.0
+[2026-04-10T22:43:45.188Z] ROOT: C:\Powerhouse cashflow
+[2026-04-10T22:43:45.188Z] V2_DIR: C:\Powerhouse cashflow\corneat-flow-v2
+[2026-04-10T22:43:45.188Z] Checking for build at: C:\Powerhouse cashflow\corneat-flow-v2\.next
+[2026-04-10T22:43:45.188Z] .next folder found — proceeding.
+[2026-04-10T22:43:45.188Z] Starting data server on port 3001...
+[2026-04-10T22:43:45.194Z] Data server spawned (PID: 17228)
+[2026-04-10T22:43:45.195Z] Starting Next.js on port 3000...
+[2026-04-10T22:43:45.208Z] Next.js spawned (PID: 28664)
+[2026-04-10T22:43:45.208Z] Polling for readiness at http://localhost:3000...
+[2026-04-10T22:43:47.211Z] Still waiting... attempt 0
+[2026-04-10T22:43:52.327Z] Still waiting... attempt 10
+[2026-04-10T22:43:57.432Z] Still waiting... attempt 20
+[2026-04-10T22:44:01.167Z] Got response: HTTP 307
+[2026-04-10T22:44:01.167Z] App is ready — opening browser.
