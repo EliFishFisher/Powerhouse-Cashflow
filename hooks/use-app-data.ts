@@ -46,15 +46,51 @@ function mergeCompanyData(companies: CompanyEntry[]): AppData {
   };
 }
 
+// Default FX rates (1 USD = X foreign). User can override via the currency selector.
+const DEFAULT_FX_RATES: FxRates = { ILS: 3.72, EUR: 0.92, GBP: 0.79, CHF: 0.88, JPY: 149, CAD: 1.36, AUD: 1.53 };
+
+function loadFxFromStorage(): FxRates {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem("ph_fx_rates") : null;
+    return raw ? { ...DEFAULT_FX_RATES, ...JSON.parse(raw) } : DEFAULT_FX_RATES;
+  } catch { return DEFAULT_FX_RATES; }
+}
+
+function loadCcyFromStorage(): string {
+  try {
+    return (typeof window !== "undefined" && localStorage.getItem("ph_reporting_ccy")) || "USD";
+  } catch { return "USD"; }
+}
+
 export function useAppData() {
-  const [data,      setData]      = useState<AppData>(EMPTY);
-  const [loading,   setLoading]   = useState(true);
-  const [serverOk,  setServerOk]  = useState(false);
-  const [fxRates,   setFxRates]   = useState<FxRates>({});
-  const [excluded,  setExcluded]  = useState<Set<string>>(new Set());
-  const [overrides, setOverrides] = useState<Record<string, Category>>({});
-  const [isAdmin,   setIsAdmin]   = useState(false);
-  const [companies, setCompanies] = useState<CompanyEntry[]>([]);
+  const [data,               setData]               = useState<AppData>(EMPTY);
+  const [loading,            setLoading]            = useState(true);
+  const [serverOk,           setServerOk]           = useState(false);
+  const [fxRates,            setFxRatesState]       = useState<FxRates>(DEFAULT_FX_RATES);
+  const [reportingCurrency,  setReportingCurrencyS] = useState<string>("USD");
+  const [excluded,           setExcluded]           = useState<Set<string>>(new Set());
+  const [overrides,          setOverrides]          = useState<Record<string, Category>>({});
+  const [isAdmin,            setIsAdmin]            = useState(false);
+  const [companies,          setCompanies]          = useState<CompanyEntry[]>([]);
+
+  // Load persisted FX prefs on first mount
+  useEffect(() => {
+    setFxRatesState(loadFxFromStorage());
+    setReportingCurrencyS(loadCcyFromStorage());
+  }, []);
+
+  // Reporting rate: multiply a USD amount by this to get the display currency amount
+  const reportingRate = reportingCurrency === "USD" ? 1 : (fxRates[reportingCurrency] ?? 1);
+
+  const setFxRates = useCallback((rates: FxRates) => {
+    setFxRatesState(rates);
+    try { localStorage.setItem("ph_fx_rates", JSON.stringify(rates)); } catch {}
+  }, []);
+
+  const setReportingCurrency = useCallback((ccy: string) => {
+    setReportingCurrencyS(ccy);
+    try { localStorage.setItem("ph_reporting_ccy", ccy); } catch {}
+  }, []);
 
   // ── Core fetch logic (shared by mount + refresh) ──────────────────────────
   const fetchData = useCallback(async () => {
@@ -194,7 +230,9 @@ export function useAppData() {
   }, []);
 
   return {
-    data, loading, serverOk, fxRates, setFxRates,
+    data, loading, serverOk,
+    fxRates, setFxRates,
+    reportingCurrency, reportingRate, setReportingCurrency,
     excluded, overrides,
     isAdmin, companies,
     toggleExclude, setCatOverride, removeCatOverride,

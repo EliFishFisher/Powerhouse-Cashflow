@@ -15,7 +15,7 @@ import type { Category, ViewPeriod } from "@/lib/constants";
 import type { DrawerState, Transaction } from "@/lib/types";
 
 export default function CashflowPage() {
-  const { data, loading, serverOk, fxRates, excluded, overrides, isAdmin, companies, refresh, clearAll: clearData, saveBankBalances, setCatOverride, toggleExclude } = useAppData();
+  const { data, loading, serverOk, fxRates, reportingCurrency, reportingRate, excluded, overrides, isAdmin, companies, refresh, clearAll: clearData, saveBankBalances, setCatOverride, toggleExclude } = useAppData();
 
   const [entity,      setEntity]      = useState("Consolidated");
   const [viewPeriod,  setViewPeriod]  = useState<ViewPeriod>("monthly");
@@ -114,8 +114,8 @@ export default function CashflowPage() {
         style={{ width: 130, minWidth: 130, textAlign: "right", padding: "0 11px", height: 33, fontSize: 11, fontWeight: 400, color: col, background: bg0, borderLeft: "1px solid #f0f4f8", cursor: clk ? "pointer" : "default", whiteSpace: "nowrap", position: "relative" }}
         onMouseEnter={e => { if (clk) { (e.currentTarget as HTMLElement).style.background = v > 0 ? "rgba(22,163,74,0.15)" : "rgba(220,38,38,0.15)"; (e.currentTarget as HTMLElement).style.outline = `1.5px solid ${v > 0 ? "#22c55e" : "#ef4444"}`; } }}
         onMouseLeave={e => { if (clk) { (e.currentTarget as HTMLElement).style.background = bg0; (e.currentTarget as HTMLElement).style.outline = "none"; } }}>
-        {blue && <span style={{ fontSize: 8, color: "#93c5fd", marginRight: 2, fontWeight: 600 }}>USD</span>}
-        {fmt(v)}{clk && v !== 0 && <span style={{ position: "absolute", top: 3, right: 3, fontSize: 7, opacity: 0.45 }}>↗</span>}
+        {blue && <span style={{ fontSize: 8, color: "#93c5fd", marginRight: 2, fontWeight: 600 }}>{reportingCurrency}</span>}
+        {fmt(v, reportingRate)}{clk && v !== 0 && <span style={{ position: "absolute", top: 3, right: 3, fontSize: 7, opacity: 0.45 }}>↗</span>}
       </td>
     );
   };
@@ -128,7 +128,7 @@ export default function CashflowPage() {
         style={{ width: 130, minWidth: 130, textAlign: "right", padding: "0 11px", height: 40, fontSize: 12, fontWeight: 700, color: col, background: bg0, borderLeft: isOut ? "1px solid #fecaca" : "1px solid #dcfce7", cursor: v !== 0 ? "pointer" : "default", whiteSpace: "nowrap", position: "relative" }}
         onMouseEnter={e => { if (v !== 0) { (e.currentTarget as HTMLElement).style.background = isOut ? "rgba(220,38,38,0.15)" : "rgba(22,163,74,0.15)"; (e.currentTarget as HTMLElement).style.outline = `1.5px solid ${isOut ? "#ef4444" : "#22c55e"}`; } }}
         onMouseLeave={e => { if (v !== 0) { (e.currentTarget as HTMLElement).style.background = bg0; (e.currentTarget as HTMLElement).style.outline = "none"; } }}>
-        {v !== 0 && <span style={{ position: "absolute", top: 3, right: 3, fontSize: 7, opacity: 0.45 }}>↗</span>}{fmt(v)}
+        {v !== 0 && <span style={{ position: "absolute", top: 3, right: 3, fontSize: 7, opacity: 0.45 }}>↗</span>}{fmt(v, reportingRate)}
       </td>
     );
   };
@@ -292,8 +292,8 @@ export default function CashflowPage() {
                 <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-slate-400">{kpi.label}</div>
                 <div className="flex items-end gap-2">
                   <div>
-                    <span className="mr-1 text-[9px] font-semibold text-slate-400">USD</span>
-                    <span className="text-xl font-bold" style={{ color: kpi.color }}>{fmt(kpi.v)}</span>
+                    <span className="mr-1 text-[9px] font-semibold text-slate-400">{reportingCurrency}</span>
+                    <span className="text-xl font-bold" style={{ color: kpi.color }}>{fmt(kpi.v, reportingRate)}</span>
                   </div>
                   <Sparkline data={derived} color={kpi.color} />
                 </div>
@@ -312,7 +312,7 @@ export default function CashflowPage() {
               <thead style={{ position:"sticky", top:0, zIndex:20 }}>
                 <tr style={{ background:"#0f172a" }}>
                   <th style={{ padding:"10px 12px", textAlign:"left", fontSize:10, fontWeight:700, color:"#e2e8f0", letterSpacing:"0.06em", textTransform:"uppercase", borderRight:"2px solid #334155", position:"sticky", left:0, zIndex:21, background:"#0f172a", whiteSpace:"nowrap" }}>
-                    Category&nbsp;<span style={{ color:"#60a5fa", fontWeight:800 }}>/ USD</span>
+                    Category&nbsp;<span style={{ color:"#60a5fa", fontWeight:800 }}>/ {reportingCurrency}</span>
                   </th>
                   {displayDerived.map((d,di) => {
                     const lbl = periodLabel(d.week, viewPeriod);
@@ -332,7 +332,7 @@ export default function CashflowPage() {
               <tbody>
                 {/* Opening Balance */}
                 <tr style={{ background:"#eff6ff" }}>
-                  <Lbl bold><span style={{ fontSize:8.5, padding:"1px 5px", borderRadius:3, background:"#dbeafe", color:"#1d4ed8", marginRight:3 }}>USD</span>Opening Balance</Lbl>
+                  <Lbl bold><span style={{ fontSize:8.5, padding:"1px 5px", borderRadius:3, background:"#dbeafe", color:"#1d4ed8", marginRight:3 }}>{reportingCurrency}</span>Opening Balance</Lbl>
                   {displayDerived.map((d,i) => <C key={i} v={d.opening_bal} week={d.week} cat="" label="" blue />)}
                 </tr>
 
@@ -409,13 +409,13 @@ export default function CashflowPage() {
 
                 {/* Net */}
                 <tr style={{ background:"#f8fafc", borderTop:"2px solid #e2e8f0", borderBottom:"2px solid #e2e8f0" }}>
-                  <Lbl bold><span style={{ fontSize:8.5, padding:"1px 5px", borderRadius:3, background:"#dbeafe", color:"#1d4ed8", marginRight:3 }}>USD</span>Net Cash Flow</Lbl>
+                  <Lbl bold><span style={{ fontSize:8.5, padding:"1px 5px", borderRadius:3, background:"#dbeafe", color:"#1d4ed8", marginRight:3 }}>{reportingCurrency}</span>Net Cash Flow</Lbl>
                   {displayDerived.map((d,i) => {
                     const net = d.total_in + d.total_out;
                     return (
                       <td key={i} onClick={() => openDrawer(d.week,"net","Net Cash Flow")}
                         style={{ width:130, minWidth:130, textAlign:"right", padding:"0 11px", height:40, fontSize:12, fontWeight:700, color:net>0?"#15803d":net<0?"#b91c1c":"#94a3b8", background:net>0?"rgba(22,163,74,0.07)":net<0?"rgba(220,38,38,0.07)":"transparent", borderLeft:"1px solid #e2e8f0", cursor:"pointer", whiteSpace:"nowrap" }}>
-                        {net>0?"+":""}{fmt(net)}
+                        {net>0?"+":""}{fmt(net, reportingRate)}
                       </td>
                     );
                   })}
@@ -423,7 +423,7 @@ export default function CashflowPage() {
 
                 {/* Closing Balance */}
                 <tr style={{ background:"#eff6ff" }}>
-                  <Lbl bold><span style={{ fontSize:8.5, padding:"1px 5px", borderRadius:3, background:"#dbeafe", color:"#1d4ed8", marginRight:3 }}>USD</span>Closing Balance</Lbl>
+                  <Lbl bold><span style={{ fontSize:8.5, padding:"1px 5px", borderRadius:3, background:"#dbeafe", color:"#1d4ed8", marginRight:3 }}>{reportingCurrency}</span>Closing Balance</Lbl>
                   {displayDerived.map((d,i) => <C key={i} v={d.closing_bal} week={d.week} cat="" label="" blue />)}
                 </tr>
 
@@ -434,8 +434,8 @@ export default function CashflowPage() {
                     const delta = derived[i] ? d.closing_bal - derived[i].closing_bal : 0;
                     return (
                       <td key={i} style={{ textAlign:"right", padding:"4px 11px", fontSize:10, color:"#475569", borderLeft:"1px solid #f0f4f8", whiteSpace:"nowrap" }}>
-                        <div>{fmt(d.closing_bal)}</div>
-                        {Math.abs(delta)>0.5 && <div style={{ fontSize:8, color:delta>0?"#16a34a":"#dc2626" }}>{delta>0?"▲":"▼"} {fmt(Math.abs(delta))}</div>}
+                        <div>{fmt(d.closing_bal, reportingRate)}</div>
+                        {Math.abs(delta)>0.5 && <div style={{ fontSize:8, color:delta>0?"#16a34a":"#dc2626" }}>{delta>0?"▲":"▼"} {fmt(Math.abs(delta), reportingRate)}</div>}
                       </td>
                     );
                   })}
@@ -448,7 +448,7 @@ export default function CashflowPage() {
           <div className="shrink-0 flex items-center gap-3 border-t border-slate-200 bg-white px-5 py-1.5 text-[10px] text-slate-400">
             <span>{activeTxns.length} active · {excluded.size} excluded · {data.meta.files?.length||0} file{(data.meta.files?.length||0)!==1?"s":""} · saved to my-dashboard/data/</span>
             <span className="flex-1" />
-            <span>▲ Inflow · (x) = outflow · USD throughout</span>
+            <span>▲ Inflow · (x) = outflow · {reportingCurrency} throughout</span>
           </div>
         </div>
       )}

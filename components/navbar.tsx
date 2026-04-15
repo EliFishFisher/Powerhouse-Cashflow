@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { FxTicker } from "@/components/fx-ticker";
 import { SubsidiarySettings } from "@/components/subsidiary-settings";
+import { CurrencySelector } from "@/components/currency-selector";
 import { createBrowserClient } from "@supabase/ssr";
 import { cn } from "@/lib/utils";
 import { useAppData } from "@/hooks/use-app-data";
@@ -20,7 +21,7 @@ const NAV_TABS = [
 export function Navbar() {
   const pathname = usePathname();
   const router   = useRouter();
-  const { isAdmin, data, saveSubsidiaries } = useAppData();
+  const { isAdmin, data, saveSubsidiaries, fxRates, setFxRates, reportingCurrency, setReportingCurrency } = useAppData();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const handleLogout = async () => {
@@ -71,11 +72,13 @@ export function Navbar() {
       <div className="ml-auto flex items-center gap-3">
         <FxTicker />
 
-        {/* Reporting currency badge */}
-        <div className="flex items-center gap-1.5 rounded border border-blue-500/25 bg-blue-500/10 px-2.5 py-1">
-          <span className="text-[10px] font-bold text-blue-300">USD</span>
-          <span className="text-[9px] text-slate-500">Reporting</span>
-        </div>
+        {/* Reporting currency selector */}
+        <CurrencySelector
+          reportingCurrency={reportingCurrency}
+          fxRates={fxRates}
+          onChangeCurrency={setReportingCurrency}
+          onChangeRates={setFxRates}
+        />
 
         {/* Server status — fetched client-side */}
         <ServerStatus />

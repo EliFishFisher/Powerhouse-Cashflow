@@ -2,13 +2,15 @@ import type { FxRates } from "./types";
 import type { ViewPeriod } from "./constants";
 
 // ─── NUMBER FORMATTING ────────────────────────────────────────────────────────
-export function fmt(v: number | null | undefined): string {
+// rate: optional reporting-currency multiplier (1 = USD, 3.72 = ILS, etc.)
+export function fmt(v: number | null | undefined, rate = 1): string {
   if (v === 0 || v == null) return "–";
+  const converted = v * rate;
   const s =
-    Math.abs(v) >= 1000
-      ? Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-      : Math.abs(v).toFixed(2);
-  return v < 0 ? `(${s})` : s;
+    Math.abs(converted) >= 1000
+      ? Math.abs(converted).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+      : Math.abs(converted).toFixed(2);
+  return converted < 0 ? `(${s})` : s;
 }
 
 // ─── WEEK HELPERS ─────────────────────────────────────────────────────────────
