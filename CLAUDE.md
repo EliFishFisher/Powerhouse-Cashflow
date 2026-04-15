@@ -228,8 +228,15 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...
 ## 8. Session Changelog
 | Date | Change |
 |------|--------|
+| 2026-04-15 | Bank Hapoalim support — `parseIsraeliBankSheet` now detects Hebrew headers (תאריך/הפעולה) in addition to Bank Leumi English headers; Poalim Foreign balance-only sheets detected early and skipped with diagnostic |
+| 2026-04-15 | `classifyIsraeliBankTxn` extended with Hebrew Hapoalim operation names: עמלה/ד.ניהול/דמי/מסלול→bank_charges, מכס/מעמ→op_regulatory, זיכוי→financing_in, פדקס/דואר→op_office, משכורת→salary, העברה/במקבץ→transfer with keyword fallback |
+| 2026-04-15 | SVB CSV credit transactions now default to `financing_in` instead of `operating_out` |
+| 2026-04-15 | Deployed to Vercel — GitHub repos: `Powerhouse-Cashflow` (origin) and `powerhouse-cashflow-app` (app remote). Fixed .gitignore `data/` → `/data/` to stop it matching `app/api/data/` |
+| 2026-04-15 | Logout button added to navbar via `createBrowserClient` + `supabase.auth.signOut()` |
+| 2026-04-15 | File-loader company selector now appears as a popup modal after file drop (not always-visible pills) |
+| 2026-04-15 | `ServerStatus` fixed to check `res.ok` (401 responses were showing green "Server connected") |
+| 2026-04-15 | Removed FX rates fetch from `use-app-data.ts` — external API blocked on Vercel/network; fx-ticker returns null on error |
 | 2026-04-15 | Removed debug `console.log` lines from `api/data/route.ts` and `api-route-helper.ts`; kept `console.error` for real errors |
-| 2026-04-15 | FX ticker (`components/fx-ticker.tsx`) now renders `null` on loading/error instead of showing a red "FX unavailable" banner — API blocked on local network, no need to surface the error |
 | 2026-04-15 | Initialized git repo — `Supabase.txt` and `.claude/` added to `.gitignore` before first commit to prevent credential leak |
 | 2026-04-12 | Multi-format parser built — `FIELD_ALIASES` + `detectHeaderRow()` + `parseGenericSheet()` handles CA_Movements and any bank with readable column headers |
 | 2026-04-12 | Duplicate UID hash fixed — balance column (or row index) added as tiebreaker in `parseGenericSheet` and `parseGenericCsv` |
@@ -244,6 +251,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...
 ---
 
 ## 9. Pending / Future Work
-- [ ] Deploy to Vercel — git repo initialized; next step: push to GitHub then connect to Vercel + add env vars
-- [ ] Test consolidated view shows all companies' data correctly post-upload
+- [ ] Test consolidated view shows all companies' data correctly post-upload (upload files for each company, check merged view)
+- [ ] Test Hapoalim NIS xlsx upload — should parse with "Bank Leumi / Hapoalim" format and classify Hebrew operation names correctly
+- [ ] Test Poalim Foreign balance-only xlsx — should produce 0 transactions + diagnostic (expected, it's a balance report)
 - [ ] **Keep this file updated** — edit CLAUDE.md at the end of every session that changes code
