@@ -24,14 +24,14 @@ export const ENT_COLOR: Record<string, string> = {
 export const ALL_CATS = [
   "financing_in","grant","salary",
   "operating_out",
-  "op_rd","op_professional","op_regulatory","op_office","op_it","op_travel",
+  "op_rd","op_professional","op_regulatory","op_rent","op_office","op_it","op_travel",
   "bank_charges","intercompany","fx_conversion","other",
 ] as const;
 
 export type Category = (typeof ALL_CATS)[number];
 
 export const OP_SUBCATS: Category[] = [
-  "op_rd","op_professional","op_regulatory","op_office","op_it","op_travel",
+  "op_rd","op_professional","op_regulatory","op_rent","op_office","op_it","op_travel",
 ];
 
 export const CAT_LABELS: Record<string, string> = {
@@ -45,6 +45,7 @@ export const CAT_LABELS: Record<string, string> = {
   op_rd:           "R&D & Clinical",
   op_professional: "Professional Services",
   op_regulatory:   "Regulatory & IP",
+  op_rent:         "Rent & Facilities",
   op_office:       "Office & Admin",
   op_it:           "IT & Software",
   op_travel:       "Travel & Conferences",
@@ -64,6 +65,7 @@ export const CAT_COLORS: Record<string, string> = {
   op_rd:           "#c2410c",
   op_professional: "#b45309",
   op_regulatory:   "#a16207",
+  op_rent:         "#0369a1",
   op_office:       "#92400e",
   op_it:           "#d97706",
   op_travel:       "#f59e0b",
@@ -83,6 +85,7 @@ export const CAT_BG: Record<string, string> = {
   op_rd:           "#fff7ed",
   op_professional: "#fffbeb",
   op_regulatory:   "#fefce8",
+  op_rent:         "#e0f2fe",
   op_office:       "#fef3c7",
   op_it:           "#fffbeb",
   op_travel:       "#fef9c3",

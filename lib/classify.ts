@@ -12,7 +12,8 @@ export const CAT_KEYWORDS: { cat: Category; words: string[] }[] = [
   { cat: "op_rd",           words: ["lab","laboratory","clinical","cro","preclinical","animal study","cadaver","biotech","trial","experiment","r&d","research","histology","pathology","surgeon","surgery","implant","device testing"] },
   { cat: "op_professional", words: ["legal","audit","accounting","consulting","counsel","lawyer","attorney","notary","cpa","kpmg","deloitte","pwc","ey ","advisory","law firm","advocate","accountant"] },
   { cat: "op_regulatory",   words: ["fda","ce mark","iso ","regulatory","patent","trademark","intellectual property"," ip ","registration","mdr","510k","ce certification","notified body"] },
-  { cat: "op_office",       words: ["rent","office","utilities","electricity","water","cleaning","maintenance","facility","building","insurance","postage","courier","fedex","dhl","amazon","printing","stationery"] },
+  { cat: "op_rent",         words: ["rent","שכר דירה","שכירות","lease","landlord","property","דמי שכירות","house","warehouse","space rental","workspace"] },
+  { cat: "op_office",       words: ["office","utilities","electricity","water","cleaning","maintenance","facility","building","insurance","postage","courier","fedex","dhl","amazon","printing","stationery"] },
   { cat: "op_it",           words: ["software","saas","subscription","aws","azure","google cloud","microsoft","zoom","slack","github","license","hosting","it support","jira","salesforce","hubspot","domain"] },
   { cat: "op_travel",       words: ["travel","flight","hotel","accommodation","conference","airbnb","taxi","uber","transport","per diem","meal","restaurant","airport","train","car rental"] },
   // Generic operating fallback
