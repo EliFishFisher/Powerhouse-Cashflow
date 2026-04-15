@@ -81,32 +81,59 @@ export function suggestCategory(t: Partial<Transaction>): Category | null {
   return null;
 }
 
-// ─── BANK LEUMI TRANSACTION CLASSIFIER ───────────────────────────────────────
+// ─── BANK LEUMI / HAPOALIM TRANSACTION CLASSIFIER ────────────────────────────
 export function classifyIsraeliBankTxn(transType: string, details: string): Category {
-  const t   = (transType || "").toLowerCase();
+  const t   = (transType || "").trim();
+  const tl  = t.toLowerCase();
   const d   = (details   || "").toLowerCase();
-  const all = `${t} ${d}`;
+  const all = `${tl} ${d}`;
 
-  if (t.includes("salary") || t === "salary-net" || t.includes("salary fee")) return "salary";
-  if (t.includes("management fee") || t.includes("recording fee") ||
-      t.includes("transfer/deposit fee") || t.includes("transfer fee") ||
-      t.includes("trade fee") || t.includes("currency fee"))                   return "bank_charges";
-  if (t.includes("foreign currency - sale") || t.includes("foreign currency - purchase"))
-                                                                                return "fx_conversion";
-  if (t.includes("foreign currency") || t.includes("foreign trade") ||
-      t.includes("foreign-currency") || t.includes("foreign-trade"))           return "bank_charges";
-  if (t.includes("interest on deposit"))  return "grant";
-  if (t.includes("deposit maturity"))     return "financing_in";
-  if (t.includes("payment into deposit")) return "other";
-  if (t.includes("customs") || t.includes("vat")) return "op_regulatory";
-  if (d.includes("קורנית") || d.includes("corneat") ||
-      d.includes("גלאוקיור") || d.includes("glaucure")) return "intercompany";
-  if (t.includes("isracard") || t.includes("credit card")) return "operating_out";
-  if (t.includes("transfer") || t.includes("cluster transfer")) {
+  // ── English / Bank Leumi terms ─────────────────────────────────────────────
+  if (tl.includes("salary") || tl === "salary-net" || tl.includes("salary fee")) return "salary";
+  if (tl.includes("management fee") || tl.includes("recording fee") ||
+      tl.includes("transfer/deposit fee") || tl.includes("transfer fee") ||
+      tl.includes("trade fee") || tl.includes("currency fee"))                   return "bank_charges";
+  if (tl.includes("foreign currency - sale") || tl.includes("foreign currency - purchase"))
+                                                                                  return "fx_conversion";
+  if (tl.includes("foreign currency") || tl.includes("foreign trade") ||
+      tl.includes("foreign-currency") || tl.includes("foreign-trade"))           return "bank_charges";
+  if (tl.includes("interest on deposit"))  return "grant";
+  if (tl.includes("deposit maturity"))     return "financing_in";
+  if (tl.includes("payment into deposit")) return "other";
+  if (tl.includes("customs") || tl.includes("vat")) return "op_regulatory";
+
+  // ── Hebrew / Bank Hapoalim operation names ─────────────────────────────────
+  // Bank charges & fees
+  if (t === "עמלה"   || tl.includes("עמלה"))   return "bank_charges"; // commission/fee
+  if (t === "ד.ניהול" || t === "דמי ניהול")    return "bank_charges"; // management fee
+  if (t.startsWith("דמי") && (t.includes("ניהול") || t.includes("רשום") || t.includes("כרטיס")))
+                                                return "bank_charges"; // registration/card fee
+  if (t === "מסלול מורחב" || t.includes("מסלול")) return "bank_charges"; // plan/tier fee
+  if (t.includes("ריבית"))                      return "bank_charges"; // interest
+  // Regulatory
+  if (t.includes("מכס"))                        return "op_regulatory"; // customs
+  if (t.includes("מעמ") || t.includes("מע\"מ") || t.includes("מע'מ")) return "op_regulatory"; // VAT
+  // Intercompany credits (e.g. "זיכוי מיהב" = credit from IHAB/parent entity)
+  if (t.startsWith("זיכוי"))                    return "financing_in"; // credit
+  // Couriers / office
+  if (t.includes("פדקס") || tl.includes("fedex") || t.includes("דואר")) return "op_office";
+  // Salary
+  if (t.includes("משכורת") || t.includes("שכר"))    return "salary";
+  // Transfers: "העברה", "העב'", "במקבץ" (batch transfer) — check details for sub-category
+  if (t.includes("העברה") || t.startsWith("העב") || t.includes("במקבץ")) {
     const match = CAT_KEYWORDS.find(r => r.words.some(w => all.includes(w)));
     return match ? match.cat : "operating_out";
   }
-  if (t.includes("זיכוי") || t.includes("credit")) return "financing_in";
+  // Intercompany entities
+  if (d.includes("קורנית") || d.includes("corneat") ||
+      d.includes("גלאוקיור") || d.includes("glaucure")) return "intercompany";
+
+  // ── Shared fallbacks ───────────────────────────────────────────────────────
+  if (tl.includes("isracard") || tl.includes("credit card")) return "operating_out";
+  if (tl.includes("transfer") || tl.includes("cluster transfer")) {
+    const match = CAT_KEYWORDS.find(r => r.words.some(w => all.includes(w)));
+    return match ? match.cat : "operating_out";
+  }
   const match = CAT_KEYWORDS.find(r => r.words.some(w => all.includes(w)));
   return match ? match.cat : "other";
 }

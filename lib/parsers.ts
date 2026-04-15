@@ -19,6 +19,7 @@ export function entityFromFilename(name: string): string {
   if (n.includes("holmes"))    return "Holmes Place PT";
   if (n.includes("orange"))    return "Orange Space";
   if (n.includes("tribute"))   return "Tribute Brands";
+  if (n.includes("glaucure") || n.includes("glau")) return "GlauCure";
   return "Unknown";
 }
 
@@ -313,20 +314,33 @@ function parseGenericSheet(
   return txns.length > 0 ? txns : null;
 }
 
-// ─── BANK LEUMI (SPECIFIC FORMAT) ─────────────────────────────────────────────
-// Kept separate because it needs special column semantics (transType, journalNo)
+// ─── BANK LEUMI / HAPOALIM (SPECIFIC FORMATS) ────────────────────────────────
+// Handles both Bank Leumi (English headers) and Bank Hapoalim (Hebrew headers).
+// Both share the same column layout: date@0, type@2, details@3, ref@4, debit@6, credit@7
 export function parseIsraeliBankSheet(
   rows:      unknown[][],
   filename:  string,
   sheetName: string,
 ): Transaction[] | null {
+  // Detect Poalim Foreign balance-only report — no transactions to parse
+  if (rows.length > 0) {
+    const r0 = String((rows[0] as unknown[])[0] || "");
+    if (r0.includes("סה") && r0.includes("יתרות")) return null; // balance report, skip
+  }
+
   let headerRow = -1;
 
   for (let i = 0; i < Math.min(8, rows.length); i++) {
     const r = rows[i] as string[];
     if (!r) continue;
     const c0 = String(r[0] || "");
+    // Bank Leumi — English headers
     if (c0 === "Date" && String(r[2] || "").toLowerCase().includes("transaction")) {
+      headerRow = i;
+      break;
+    }
+    // Bank Hapoalim — Hebrew headers (תאריך = date, הפעולה = operation)
+    if (c0 === "תאריך" && String(r[2] || "").includes("פעולה")) {
       headerRow = i;
       break;
     }
@@ -471,7 +485,7 @@ export function parseWorkbook(
     // Detect which format was matched (for diagnostics)
     const leumiMatch   = parseIsraeliBankSheet(rows, filename, sn) !== null;
     const genericMatch = !leumiMatch && detectHeaderRow(rows) !== null;
-    const formatName   = leumiMatch ? "Bank Leumi" : genericMatch ? "Generic (auto-detected)" : "Legacy / Unknown";
+    const formatName   = leumiMatch ? "Bank Leumi / Hapoalim" : genericMatch ? "Generic (auto-detected)" : "Legacy / Unknown";
 
     const sheetTxns = parseSheet(wb.Sheets[sn], entity, filename, sn);
     txns = txns.concat(sheetTxns);
@@ -546,7 +560,8 @@ export function parseSVBCsv(text: string, filename: string): Transaction[] {
     else if (tranType.toLowerCase().includes("deposit"))  cat = "financing_in";
     else {
       const match = CAT_KEYWORDS.find(r => r.words.some(w => all.includes(w)));
-      cat = match ? match.cat : "operating_out";
+      // Credits default to financing_in; debits default to operating_out
+      cat = match ? match.cat : (net > 0 ? "financing_in" : "operating_out");
     }
 
     txns.push({
