@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAppData } from "@/hooks/use-app-data";
 import { computeActiveTxns } from "@/lib/cashflow";
@@ -57,6 +57,45 @@ export default function RulesPage() {
   const [dismissed,         setDismissed]         = useState<Set<string>>(new Set());
   const [suggestOpen,       setSuggestOpen]        = useState(true);
   const [expandedSuggestion,setExpandedSuggestion] = useState<string | null>(null);
+  const migrationRan = useRef(false);
+
+  // ── One-time migration: move entity-scoped rules from admin row → company rows ──
+  // Rules created before full isolation had entities:["Orange Space"] stored in
+  // the admin's data.rules. This effect runs once after data loads and moves them
+  // to the correct company row, then clears admin's row.
+  useEffect(() => {
+    if (!isAdmin || loading || migrationRan.current) return;
+    const scopedRules = data.rules.filter(r => (r.entities ?? []).length > 0);
+    if (!scopedRules.length) { migrationRan.current = true; return; }
+
+    migrationRan.current = true;
+
+    (async () => {
+      // Group rules by target entity
+      const byEntity = new Map<string, typeof scopedRules>();
+      scopedRules.forEach(rule => {
+        (rule.entities ?? []).forEach(entity => {
+          if (!byEntity.has(entity)) byEntity.set(entity, []);
+          // Store in company row without the entity scope (they're now isolated)
+          byEntity.get(entity)!.push({ ...rule, entities: [] });
+        });
+      });
+
+      // Write each company's new rules (deduplicate by uid)
+      for (const [entity, rules] of byEntity) {
+        const co = companies.find(c => c.entity_name === entity);
+        const existing = co?.data.rules ?? [];
+        const existingUids = new Set(existing.map(r => r.uid));
+        const toAdd = rules.filter(r => !existingUids.has(r.uid));
+        if (toAdd.length) await saveRules([...existing, ...toAdd], entity);
+      }
+
+      // Clear admin's row (remove the now-migrated entity-scoped rules; keep truly global ones)
+      const globalRules = data.rules.filter(r => (r.entities ?? []).length === 0);
+      await saveRules(globalRules, undefined);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, loading, data.rules.length]);   // trigger once when data is ready
 
   // ── Auto-open from drawer "Turn into rule" link ────────────────────────────
   const router = useRouter();
