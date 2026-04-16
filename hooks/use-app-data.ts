@@ -73,10 +73,31 @@ export function useAppData() {
   const [isAdmin,            setIsAdmin]            = useState(false);
   const [companies,          setCompanies]          = useState<CompanyEntry[]>([]);
 
-  // Load persisted FX prefs on first mount
+  // Load persisted FX prefs on first mount, then fetch live rates
   useEffect(() => {
     setFxRatesState(loadFxFromStorage());
     setReportingCurrencyS(loadCcyFromStorage());
+
+    // Fetch live rates from our server-side proxy (avoids CORS)
+    // Skip if cached rates are still fresh (< 23h old)
+    const fetchLiveRates = async () => {
+      try {
+        const res = await fetch("/api/fx-rates");
+        if (!res.ok) return;
+        const json = await res.json() as { rates: Record<string, number>; fetchedAt: number };
+        if (json.rates && Object.keys(json.rates).length > 0) {
+          setFxRatesState(prev => ({ ...prev, ...json.rates }));
+          try { localStorage.setItem("ph_fx_rates", JSON.stringify({ ...loadFxFromStorage(), ...json.rates })); } catch {}
+          try { localStorage.setItem("ph_fx_fetched_at", String(json.fetchedAt)); } catch {}
+        }
+      } catch { /* silently ignore — fallback rates remain active */ }
+    };
+
+    // Only re-fetch if last live fetch was > 23h ago
+    const lastFetch = typeof window !== "undefined" ? Number(localStorage.getItem("ph_fx_fetched_at") || 0) : 0;
+    if (Date.now() - lastFetch > 23 * 60 * 60 * 1000) {
+      fetchLiveRates();
+    }
   }, []);
 
   // Reporting rate: multiply a USD amount by this to get the display currency amount

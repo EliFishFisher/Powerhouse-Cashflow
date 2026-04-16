@@ -83,22 +83,12 @@ export default function RulesPage() {
   }, []);   // run once on mount only
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  // For admin: rules that apply to the selected entity.
-  // This includes:
-  //   1. Global rules (entities:[]) in the admin's own row
-  //   2. Admin's row rules scoped to this entity (entities:["Orange Space"])
-  //   3. Rules stored in the company's own row (created while on that tab)
+  // Entity tabs show only that company's own rules (isolated per company).
+  // Global admin rules are only visible/editable from the "All Companies" tab.
   const rulesForEntity = useMemo(() => {
     if (!isAdmin || activeEntity === "All") return data.rules;
     const co = companies.find(c => c.entity_name === activeEntity);
-    const companyRules = co?.data.rules ?? [];
-    // Admin's rules that apply to this entity (global or entity-scoped)
-    const adminApplicable = data.rules.filter(
-      r => (r.entities ?? []).length === 0 || (r.entities ?? []).includes(activeEntity),
-    );
-    // Merge, deduplicating by uid (company row rules take precedence)
-    const seen = new Set(companyRules.map(r => r.uid));
-    return [...companyRules, ...adminApplicable.filter(r => !seen.has(r.uid))];
+    return co?.data.rules ?? [];
   }, [isAdmin, activeEntity, companies, data.rules]);
 
   const sorted = useMemo(
@@ -216,14 +206,14 @@ export default function RulesPage() {
   // The entity whose row we are currently editing (undefined = admin's own row)
   const saveTarget = isAdmin && activeEntity !== "All" ? activeEntity : undefined;
 
-  // Helper: which source row does a rule uid live in?
-  // Returns the rules array + save target for that row.
-  const resolveSource = useCallback((uid: string) => {
-    const isAdminRule = data.rules.some(r => r.uid === uid);
-    if (isAdminRule) return { rules: data.rules, tgt: undefined as string | undefined };
+  // Helper: returns the rules array + save target for the current view.
+  // "All Companies" → admin's own row (tgt: undefined)
+  // Entity tab → that company's own row (tgt: activeEntity)
+  const resolveSource = useCallback((_uid?: string) => {
+    if (!isAdmin || activeEntity === "All") return { rules: data.rules, tgt: undefined as string | undefined };
     const co = companies.find(c => c.entity_name === activeEntity);
     return { rules: co?.data.rules ?? [], tgt: saveTarget };
-  }, [data.rules, companies, activeEntity, saveTarget]);
+  }, [isAdmin, activeEntity, data.rules, companies, saveTarget]);
 
   const handleSave = useCallback(async () => {
     const pendingKw = kwInput.trim().toLowerCase();
@@ -237,16 +227,11 @@ export default function RulesPage() {
     setSaving(true);
     try {
       const updated = { label: form.label.trim(), keywords, field: form.field, cat: form.cat, enabled: form.enabled, entities: form.entities };
+      const { rules: src, tgt } = resolveSource();
       if (editId) {
-        // Route the edit to whichever row owns this rule
-        const { rules: src, tgt } = resolveSource(editId);
-        const next = src.map(r => r.uid === editId ? { ...r, ...updated } : r);
-        await saveRules(next, tgt);
+        await saveRules(src.map(r => r.uid === editId ? { ...r, ...updated } : r), tgt);
       } else {
-        // New rule → goes into the current tab's row
-        const co = companies.find(c => c.entity_name === activeEntity);
-        const src = saveTarget ? (co?.data.rules ?? []) : data.rules;
-        await saveRules([...src, makeClassificationRule(updated)], saveTarget);
+        await saveRules([...src, makeClassificationRule(updated)], tgt);
       }
       closePanel();
     } finally {
@@ -255,18 +240,18 @@ export default function RulesPage() {
   }, [form, editId, data.rules, companies, activeEntity, saveRules, saveTarget, resolveSource, closePanel, kwInput]);
 
   const handleToggle = useCallback(async (uid: string) => {
-    const { rules: src, tgt } = resolveSource(uid);
+    const { rules: src, tgt } = resolveSource();
     await saveRules(src.map(r => r.uid === uid ? { ...r, enabled: !r.enabled } : r), tgt);
   }, [resolveSource, saveRules]);
 
   const handleDelete = useCallback(async (uid: string) => {
-    const { rules: src, tgt } = resolveSource(uid);
+    const { rules: src, tgt } = resolveSource();
     await saveRules(src.filter(r => r.uid !== uid), tgt);
     setDeleteId(null);
   }, [resolveSource, saveRules]);
 
   const handleMove = useCallback(async (uid: string, dir: "up" | "down") => {
-    const { rules: src, tgt } = resolveSource(uid);
+    const { rules: src, tgt } = resolveSource();
     const arr = [...src].sort((a, b) => a.priority - b.priority);
     const idx  = arr.findIndex(r => r.uid === uid);
     const swap = dir === "up" ? idx - 1 : idx + 1;
@@ -313,15 +298,7 @@ export default function RulesPage() {
               const isActive = activeEntity === tab.value;
               const count    = tab.value === "All"
                 ? data.rules.length
-                : (() => {
-                    const co = companies.find(c => c.entity_name === tab.value);
-                    const companyRules = co?.data.rules ?? [];
-                    const adminApplicable = data.rules.filter(
-                      r => (r.entities ?? []).length === 0 || (r.entities ?? []).includes(tab.value),
-                    );
-                    const seen = new Set(companyRules.map(r => r.uid));
-                    return companyRules.length + adminApplicable.filter(r => !seen.has(r.uid)).length;
-                  })();
+                : (companies.find(c => c.entity_name === tab.value)?.data.rules ?? []).length;
               return (
                 <button
                   key={tab.value}
@@ -349,7 +326,7 @@ export default function RulesPage() {
             })}
             {activeEntity !== "All" && (
               <span style={{ marginLeft: "auto", fontSize: 10, color: "#94a3b8", fontStyle: "italic" }}>
-                Editing rules for <strong style={{ color: "#475569" }}>{activeEntity}</strong> only
+                Rules for <strong style={{ color: "#475569" }}>{activeEntity}</strong> only · global rules managed under <em>All Companies</em>
               </span>
             )}
           </div>
