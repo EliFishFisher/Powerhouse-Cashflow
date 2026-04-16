@@ -53,9 +53,10 @@ export default function RulesPage() {
   const [form,      setForm]      = useState(EMPTY_FORM);
   const [kwInput,   setKwInput]   = useState("");
   const [deleteId,  setDeleteId]  = useState<string | null>(null);
-  const [saving,      setSaving]      = useState(false);
-  const [dismissed,   setDismissed]   = useState<Set<string>>(new Set());
-  const [suggestOpen, setSuggestOpen] = useState(true);
+  const [saving,            setSaving]            = useState(false);
+  const [dismissed,         setDismissed]         = useState<Set<string>>(new Set());
+  const [suggestOpen,       setSuggestOpen]        = useState(true);
+  const [expandedSuggestion,setExpandedSuggestion] = useState<string | null>(null);
 
   // ── Auto-open from drawer "Turn into rule" link ────────────────────────────
   const router = useRouter();
@@ -168,6 +169,19 @@ export default function RulesPage() {
       .map(([keyword, { count, cat }]) => ({ keyword, count, cat }));
   }, [allTxns, sorted, dismissed]);
 
+  // Transactions matching each suggestion keyword (for inline breakdown)
+  const suggestionTxnsMap = useMemo(() => {
+    const map = new Map<string, typeof allTxns>();
+    suggestions.forEach(s => {
+      map.set(s.keyword, allTxns.filter(t =>
+        (t.details || "").toLowerCase().includes(s.keyword) ||
+        (t.contra  || "").toLowerCase().includes(s.keyword) ||
+        (t.account || "").toLowerCase().includes(s.keyword),
+      ));
+    });
+    return map;
+  }, [suggestions, allTxns]);
+
   // ── Handlers ──────────────────────────────────────────────────────────────
   const openAdd = useCallback((prefill?: { keyword: string; cat: Category }) => {
     setEditId(null);
@@ -202,8 +216,16 @@ export default function RulesPage() {
   // The entity whose row we are currently editing (undefined = admin's own row)
   const saveTarget = isAdmin && activeEntity !== "All" ? activeEntity : undefined;
 
+  // Helper: which source row does a rule uid live in?
+  // Returns the rules array + save target for that row.
+  const resolveSource = useCallback((uid: string) => {
+    const isAdminRule = data.rules.some(r => r.uid === uid);
+    if (isAdminRule) return { rules: data.rules, tgt: undefined as string | undefined };
+    const co = companies.find(c => c.entity_name === activeEntity);
+    return { rules: co?.data.rules ?? [], tgt: saveTarget };
+  }, [data.rules, companies, activeEntity, saveTarget]);
+
   const handleSave = useCallback(async () => {
-    // Commit any text still in the input box before saving
     const pendingKw = kwInput.trim().toLowerCase();
     const keywords = [...form.keywords, ...(pendingKw ? [pendingKw] : [])]
       .map(k => k.trim().toLowerCase())
@@ -214,50 +236,52 @@ export default function RulesPage() {
     }
     setSaving(true);
     try {
-      let next: ClassificationRule[];
+      const updated = { label: form.label.trim(), keywords, field: form.field, cat: form.cat, enabled: form.enabled, entities: form.entities };
       if (editId) {
-        next = rulesForEntity.map(r =>
-          r.uid === editId
-            ? { ...r, label: form.label.trim(), keywords, field: form.field, cat: form.cat, enabled: form.enabled, entities: form.entities }
-            : r,
-        );
+        // Route the edit to whichever row owns this rule
+        const { rules: src, tgt } = resolveSource(editId);
+        const next = src.map(r => r.uid === editId ? { ...r, ...updated } : r);
+        await saveRules(next, tgt);
       } else {
-        next = [...rulesForEntity, makeClassificationRule({
-          label: form.label.trim(), keywords, field: form.field, cat: form.cat, enabled: form.enabled, entities: form.entities,
-        })];
+        // New rule → goes into the current tab's row
+        const co = companies.find(c => c.entity_name === activeEntity);
+        const src = saveTarget ? (co?.data.rules ?? []) : data.rules;
+        await saveRules([...src, makeClassificationRule(updated)], saveTarget);
       }
-      await saveRules(next, saveTarget);
       closePanel();
     } finally {
       setSaving(false);
     }
-  }, [form, editId, rulesForEntity, saveRules, saveTarget, closePanel]);
+  }, [form, editId, data.rules, companies, activeEntity, saveRules, saveTarget, resolveSource, closePanel, kwInput]);
 
   const handleToggle = useCallback(async (uid: string) => {
-    await saveRules(rulesForEntity.map(r => r.uid === uid ? { ...r, enabled: !r.enabled } : r), saveTarget);
-  }, [rulesForEntity, saveRules, saveTarget]);
+    const { rules: src, tgt } = resolveSource(uid);
+    await saveRules(src.map(r => r.uid === uid ? { ...r, enabled: !r.enabled } : r), tgt);
+  }, [resolveSource, saveRules]);
 
   const handleDelete = useCallback(async (uid: string) => {
-    await saveRules(rulesForEntity.filter(r => r.uid !== uid), saveTarget);
+    const { rules: src, tgt } = resolveSource(uid);
+    await saveRules(src.filter(r => r.uid !== uid), tgt);
     setDeleteId(null);
-  }, [rulesForEntity, saveRules, saveTarget]);
+  }, [resolveSource, saveRules]);
 
   const handleMove = useCallback(async (uid: string, dir: "up" | "down") => {
-    const arr = [...sorted];
+    const { rules: src, tgt } = resolveSource(uid);
+    const arr = [...src].sort((a, b) => a.priority - b.priority);
     const idx  = arr.findIndex(r => r.uid === uid);
     const swap = dir === "up" ? idx - 1 : idx + 1;
     if (swap < 0 || swap >= arr.length) return;
     const pa = arr[idx].priority;
     const pb = arr[swap].priority;
     await saveRules(
-      rulesForEntity.map(r => {
+      src.map(r => {
         if (r.uid === arr[idx].uid)  return { ...r, priority: pb };
         if (r.uid === arr[swap].uid) return { ...r, priority: pa };
         return r;
       }),
-      saveTarget,
+      tgt,
     );
-  }, [sorted, rulesForEntity, saveRules, saveTarget]);
+  }, [resolveSource, saveRules]);
 
   // ── Guard states ──────────────────────────────────────────────────────────
   if (loading) return (
@@ -375,17 +399,14 @@ export default function RulesPage() {
             onClick={() => setSuggestOpen(o => !o)}
           >
             <span style={{ fontSize: 15 }}>💡</span>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "#92400e" }}>
-              Suggested Rules
-            </span>
-            <span style={{
-              fontSize: 10, fontWeight: 700, background: "#fde68a", color: "#92400e",
-              borderRadius: 999, padding: "1px 7px",
-            }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#92400e" }}>Suggested Rules</span>
+            <span style={{ fontSize: 10, fontWeight: 700, background: "#fde68a", color: "#92400e", borderRadius: 999, padding: "1px 7px" }}>
               {suggestions.length}
             </span>
             <span style={{ fontSize: 10, color: "#b45309", opacity: 0.8 }}>
-              Patterns detected in your transactions — review and add what looks right
+              Patterns in{" "}
+              <strong>{activeEntity === "All" ? "all companies'" : `${activeEntity}'s`}</strong>
+              {" "}transactions — click a row to preview matches
             </span>
             <span style={{ marginLeft: "auto", fontSize: 10, color: "#b45309" }}>
               {suggestOpen ? "▲ hide" : "▼ show"}
@@ -394,60 +415,100 @@ export default function RulesPage() {
 
           {suggestOpen && (
             <div style={{ padding: "0 20px 12px", display: "flex", flexDirection: "column", gap: 5 }}>
-              {suggestions.map(s => (
-                <div key={s.keyword} style={{
-                  display: "flex", alignItems: "center", gap: 10,
-                  background: "#fff", border: "1px solid #fde68a",
-                  borderRadius: 7, padding: "7px 12px",
-                }}>
-                  {/* Keyword */}
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "#1e293b", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    "{s.keyword}"
-                  </span>
-
-                  {/* Match count */}
-                  <span style={{ fontSize: 10, color: "#64748b", flexShrink: 0 }}>
-                    {s.count} match{s.count !== 1 ? "es" : ""}
-                  </span>
-
-                  {/* Suggested category badge */}
-                  <span style={{
-                    fontSize: 10, fontWeight: 600, borderRadius: 999, padding: "2px 9px",
-                    flexShrink: 0, whiteSpace: "nowrap",
-                    background: CAT_BG[s.cat]    || "#f1f5f9",
-                    color:      CAT_COLORS[s.cat] || "#64748b",
+              {suggestions.map(s => {
+                const isExpanded = expandedSuggestion === s.keyword;
+                const matchTxns  = suggestionTxnsMap.get(s.keyword) ?? [];
+                return (
+                  <div key={s.keyword} style={{
+                    background: "#fff", border: `1px solid ${isExpanded ? "#f59e0b" : "#fde68a"}`,
+                    borderRadius: 7, overflow: "hidden",
+                    boxShadow: isExpanded ? "0 2px 8px rgba(245,158,11,0.12)" : "none",
                   }}>
-                    {CAT_LABELS[s.cat] || s.cat}
-                  </span>
+                    {/* Main row — clickable to expand */}
+                    <div
+                      onClick={() => setExpandedSuggestion(isExpanded ? null : s.keyword)}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 12px", cursor: "pointer" }}
+                    >
+                      {/* Expand chevron */}
+                      <span style={{ fontSize: 10, color: "#b45309", display: "inline-block", transition: "transform 0.15s", transform: isExpanded ? "rotate(90deg)" : "rotate(0)" }}>›</span>
 
-                  {/* Add Rule button */}
-                  <button
-                    onClick={() => openAdd({ keyword: s.keyword, cat: s.cat })}
-                    style={{
-                      height: 26, padding: "0 11px", fontSize: 11, fontWeight: 600,
-                      background: "#1e293b", color: "#fff",
-                      border: "none", borderRadius: 5, cursor: "pointer",
-                      flexShrink: 0, whiteSpace: "nowrap",
-                    }}
-                  >
-                    + Add Rule
-                  </button>
+                      {/* Keyword */}
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "#1e293b", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        "{s.keyword}"
+                      </span>
 
-                  {/* Dismiss */}
-                  <button
-                    onClick={() => setDismissed(d => new Set([...d, s.keyword]))}
-                    title="Dismiss suggestion"
-                    style={{
-                      width: 26, height: 26, background: "none",
-                      border: "1px solid #e2e8f0", borderRadius: 5,
-                      cursor: "pointer", fontSize: 12, color: "#94a3b8",
-                      flexShrink: 0,
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
+                      {/* Match count */}
+                      <span style={{ fontSize: 10, color: "#64748b", flexShrink: 0 }}>
+                        {s.count} match{s.count !== 1 ? "es" : ""}
+                      </span>
+
+                      {/* Suggested category badge */}
+                      <span style={{
+                        fontSize: 10, fontWeight: 600, borderRadius: 999, padding: "2px 9px",
+                        flexShrink: 0, whiteSpace: "nowrap",
+                        background: CAT_BG[s.cat]    || "#f1f5f9",
+                        color:      CAT_COLORS[s.cat] || "#64748b",
+                      }}>
+                        {CAT_LABELS[s.cat] || s.cat}
+                      </span>
+
+                      {/* Add Rule button */}
+                      <button
+                        onClick={e => { e.stopPropagation(); openAdd({ keyword: s.keyword, cat: s.cat }); }}
+                        style={{ height: 26, padding: "0 11px", fontSize: 11, fontWeight: 600, background: "#1e293b", color: "#fff", border: "none", borderRadius: 5, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}
+                      >
+                        + Add Rule
+                      </button>
+
+                      {/* Dismiss */}
+                      <button
+                        onClick={e => { e.stopPropagation(); setDismissed(d => new Set([...d, s.keyword])); }}
+                        title="Dismiss suggestion"
+                        style={{ width: 26, height: 26, background: "none", border: "1px solid #e2e8f0", borderRadius: 5, cursor: "pointer", fontSize: 12, color: "#94a3b8", flexShrink: 0 }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {/* Expanded transaction breakdown */}
+                    {isExpanded && (
+                      <div style={{ borderTop: "1px solid #fde68a", background: "#fffdf5" }}>
+                        <div style={{ padding: "6px 14px 4px", fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                          Matching transactions ({matchTxns.length})
+                        </div>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                          <thead>
+                            <tr style={{ borderBottom: "1px solid #fde68a" }}>
+                              {["Date", "Entity", "Description", "Amount"].map(h => (
+                                <th key={h} style={{ padding: "4px 14px", textAlign: h === "Amount" ? "right" : "left", fontWeight: 700, fontSize: 9, color: "#b45309", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {matchTxns.slice(0, 8).map((t, i) => (
+                              <tr key={t.uid} style={{ background: i % 2 === 0 ? "transparent" : "#fffbeb", borderBottom: "1px solid #fef3c7" }}>
+                                <td style={{ padding: "4px 14px", color: "#64748b", whiteSpace: "nowrap" }}>{t.date}</td>
+                                <td style={{ padding: "4px 14px", color: "#92400e", fontWeight: 600, whiteSpace: "nowrap" }}>{t.entity}</td>
+                                <td style={{ padding: "4px 14px", color: "#1e293b", maxWidth: 340, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.details || t.contra || t.account || "—"}</td>
+                                <td style={{ padding: "4px 14px", textAlign: "right", fontWeight: 600, whiteSpace: "nowrap", color: t.net > 0 ? "#16a34a" : "#dc2626" }}>
+                                  {t.net > 0 ? "+" : ""}{t.net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {t.currency}
+                                </td>
+                              </tr>
+                            ))}
+                            {matchTxns.length > 8 && (
+                              <tr>
+                                <td colSpan={4} style={{ padding: "5px 14px", fontSize: 10, color: "#b45309", fontStyle: "italic" }}>
+                                  … and {matchTxns.length - 8} more
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
