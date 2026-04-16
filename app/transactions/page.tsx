@@ -16,6 +16,7 @@ import type { Category } from "@/lib/constants";
 
 type SortCol = "date" | "amount" | "entity";
 type StatusFilter = "all" | "active" | "excluded";
+type Direction = "all" | "in" | "out";
 
 export default function TransactionsPage() {
   const {
@@ -23,6 +24,8 @@ export default function TransactionsPage() {
     loading,
     serverOk,
     fxRates,
+    reportingCurrency,
+    reportingRate,
     excluded,
     overrides,
     toggleExclude,
@@ -34,9 +37,16 @@ export default function TransactionsPage() {
   const [entityFilter,  setEntityFilter]  = useState("All");
   const [catFilter,     setCatFilter]     = useState("All");
   const [statusFilter,  setStatusFilter]  = useState<StatusFilter>("all");
+  const [direction,     setDirection]     = useState<Direction>("all");
+  const [currencyFilter,setCurrencyFilter]= useState("All");
+  const [dateFrom,      setDateFrom]      = useState("");
+  const [dateTo,        setDateTo]        = useState("");
+  const [amtMin,        setAmtMin]        = useState("");
+  const [amtMax,        setAmtMax]        = useState("");
   const [sortBy,        setSortBy]        = useState<SortCol>("date");
   const [sortDir,       setSortDir]       = useState<"asc" | "desc">("desc");
   const [overrideOpen,  setOverrideOpen]  = useState<string | null>(null);
+  const [moreOpen,      setMoreOpen]      = useState(false);
 
   // ── All raw rows (transactions + adjustments) ─────────────────────────────
   const allRaw = useMemo(
@@ -76,14 +86,51 @@ export default function TransactionsPage() {
     [allRaw, catMap, overrides, excluded],
   );
 
+  // ── Dynamic filter options ────────────────────────────────────────────────
+  // Entities: parents + subsidiaries that have actual data
+  const entityOptions = useMemo(() => {
+    const seen = new Set(allDisplayed.map(t => t.entity));
+    const result: { name: string; isSub: boolean; parent?: string }[] = [];
+    for (const parent of ENTITIES.filter(e => e !== "Consolidated")) {
+      if (seen.has(parent)) result.push({ name: parent, isSub: false });
+      data.subsidiaries
+        .filter(s => s.parentEntity === parent && seen.has(s.name))
+        .forEach(s => result.push({ name: s.name, isSub: true, parent }));
+    }
+    // Any entity in data not captured above (edge cases)
+    seen.forEach(e => {
+      if (!result.find(r => r.name === e)) result.push({ name: e, isSub: false });
+    });
+    return result;
+  }, [allDisplayed, data.subsidiaries]);
+
+  // Currencies present in data
+  const currencies = useMemo(() => {
+    const ccys = [...new Set(allDisplayed.map(t => t.currency).filter(Boolean))].sort();
+    return ccys;
+  }, [allDisplayed]);
+
   // ── Filters + sort ────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     let rows = allDisplayed;
 
-    if (statusFilter === "active")   rows = rows.filter(r => !r.isExcluded);
-    if (statusFilter === "excluded") rows = rows.filter(r =>  r.isExcluded);
-    if (entityFilter !== "All")      rows = rows.filter(r => r.entity === entityFilter);
-    if (catFilter    !== "All")      rows = rows.filter(r => r.cat    === catFilter);
+    if (statusFilter === "active")      rows = rows.filter(r => !r.isExcluded);
+    if (statusFilter === "excluded")    rows = rows.filter(r =>  r.isExcluded);
+    if (direction === "in")             rows = rows.filter(r => r.net > 0);
+    if (direction === "out")            rows = rows.filter(r => r.net < 0);
+    if (entityFilter !== "All")         rows = rows.filter(r => r.entity === entityFilter);
+    if (catFilter    !== "All")         rows = rows.filter(r => r.cat    === catFilter);
+    if (currencyFilter !== "All")       rows = rows.filter(r => r.currency === currencyFilter);
+    if (dateFrom)                       rows = rows.filter(r => r.date >= dateFrom);
+    if (dateTo)                         rows = rows.filter(r => r.date <= dateTo);
+    if (amtMin !== "") {
+      const min = parseFloat(amtMin);
+      if (!isNaN(min)) rows = rows.filter(r => Math.abs(r.net) >= min);
+    }
+    if (amtMax !== "") {
+      const max = parseFloat(amtMax);
+      if (!isNaN(max)) rows = rows.filter(r => Math.abs(r.net) <= max);
+    }
 
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -103,16 +150,31 @@ export default function TransactionsPage() {
       if (sortBy === "entity") v = a.entity.localeCompare(b.entity);
       return sortDir === "asc" ? v : -v;
     });
-  }, [allDisplayed, statusFilter, entityFilter, catFilter, search, sortBy, sortDir]);
+  }, [allDisplayed, statusFilter, direction, entityFilter, catFilter, currencyFilter,
+      dateFrom, dateTo, amtMin, amtMax, search, sortBy, sortDir]);
 
-  // ── Stats ─────────────────────────────────────────────────────────────────
+  // ── Active filter count (for badge) ───────────────────────────────────────
+  const activeFilterCount = [
+    search.trim(), entityFilter !== "All", catFilter !== "All",
+    statusFilter !== "all", direction !== "all", currencyFilter !== "All",
+    dateFrom, dateTo, amtMin !== "", amtMax !== "",
+  ].filter(Boolean).length;
+
+  const clearAllFilters = useCallback(() => {
+    setSearch(""); setEntityFilter("All"); setCatFilter("All");
+    setStatusFilter("all"); setDirection("all"); setCurrencyFilter("All");
+    setDateFrom(""); setDateTo(""); setAmtMin(""); setAmtMax("");
+  }, []);
+
+  // ── Stats (use netUSD for cross-currency accuracy) ────────────────────────
   const stats = useMemo(() => {
     const active = filtered.filter(r => !r.isExcluded);
+    const usd = (r: typeof active[0]) => r.netUSD ?? r.net;
     return {
       shown:    filtered.length,
-      totalIn:  active.filter(r => r.net > 0).reduce((s, r) => s + r.net, 0),
-      totalOut: active.filter(r => r.net < 0).reduce((s, r) => s + r.net, 0),
-      net:      active.reduce((s, r) => s + r.net, 0),
+      totalIn:  active.filter(r => r.net > 0).reduce((s, r) => s + usd(r), 0),
+      totalOut: active.filter(r => r.net < 0).reduce((s, r) => s + usd(r), 0),
+      net:      active.reduce((s, r) => s + usd(r), 0),
     };
   }, [filtered]);
 
@@ -153,82 +215,161 @@ export default function TransactionsPage() {
     <div className="flex h-full flex-col" style={{ background: "#f8fafc" }}>
 
       {/* ── Filter bar ─────────────────────────────────────────────────────── */}
-      <div
-        className="shrink-0 flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-5 py-3"
-        style={{ minHeight: 52 }}
-      >
-        {/* Search */}
-        <div style={{ position: "relative" }}>
-          <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: "#94a3b8", pointerEvents: "none" }}>
-            🔍
-          </span>
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search description, contra, account…"
-            style={{
-              paddingLeft: 28, paddingRight: 10, height: 30, fontSize: 12,
-              borderRadius: 6, border: "1px solid #e2e8f0", outline: "none",
-              width: 270, background: "#f8fafc",
-            }}
+      <div className="shrink-0 border-b border-slate-200 bg-white">
+
+        {/* Primary row */}
+        <div className="flex flex-wrap items-center gap-2 px-5 py-2.5">
+
+          {/* Search */}
+          <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: "#94a3b8", pointerEvents: "none" }}>🔍</span>
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search description, contra, ref…"
+              style={{ paddingLeft: 26, paddingRight: search ? 24 : 10, height: 30, fontSize: 12, borderRadius: 6, border: "1px solid #e2e8f0", outline: "none", width: 240, background: "#f8fafc" }}
+            />
+            {search && (
+              <button onClick={() => setSearch("")} style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#94a3b8" }}>✕</button>
+            )}
+          </div>
+
+          <div style={{ width: 1, height: 20, background: "#e2e8f0" }} />
+
+          {/* Entity */}
+          <Select value={entityFilter} onChange={setEntityFilter}>
+            <option value="All">All entities</option>
+            {entityOptions.map(opt => (
+              <option key={opt.name} value={opt.name}>
+                {opt.isSub ? `  ↳ ${opt.name}` : opt.name}
+              </option>
+            ))}
+          </Select>
+
+          {/* Category */}
+          <Select value={catFilter} onChange={setCatFilter}>
+            <option value="All">All categories</option>
+            {ALL_CATS.map(c => (
+              <option key={c} value={c}>{CAT_LABELS[c] || c}</option>
+            ))}
+          </Select>
+
+          {/* Direction */}
+          <ToggleGroup
+            options={[
+              { value: "all", label: "↕ All" },
+              { value: "in",  label: "▲ In"  },
+              { value: "out", label: "▼ Out" },
+            ]}
+            value={direction}
+            onChange={v => setDirection(v as Direction)}
           />
-          {search && (
+
+          {/* Status */}
+          <ToggleGroup
+            options={[
+              { value: "all",      label: "All"      },
+              { value: "active",   label: "Active"   },
+              { value: "excluded", label: "Excluded" },
+            ]}
+            value={statusFilter}
+            onChange={v => setStatusFilter(v as StatusFilter)}
+          />
+
+          {/* Currency */}
+          {currencies.length > 1 && (
+            <Select value={currencyFilter} onChange={setCurrencyFilter}>
+              <option value="All">All currencies</option>
+              {currencies.map(c => <option key={c} value={c}>{c}</option>)}
+            </Select>
+          )}
+
+          {/* More filters toggle */}
+          <button
+            onClick={() => setMoreOpen(o => !o)}
+            style={{
+              height: 30, padding: "0 10px", fontSize: 11, fontWeight: 600,
+              border: "1px solid #e2e8f0", borderRadius: 6, background: moreOpen ? "#f1f5f9" : "#f8fafc",
+              color: "#64748b", cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+            }}
+          >
+            {moreOpen ? "▲" : "▼"} More
+            {(dateFrom || dateTo || amtMin !== "" || amtMax !== "") && (
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#3b82f6", display: "inline-block" }} />
+            )}
+          </button>
+
+          {/* Clear all */}
+          {activeFilterCount > 0 && (
             <button
-              onClick={() => setSearch("")}
-              style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#94a3b8" }}
+              onClick={clearAllFilters}
+              style={{ height: 30, padding: "0 10px", fontSize: 11, fontWeight: 600, border: "1px solid #fecaca", borderRadius: 6, background: "#fef2f2", color: "#dc2626", cursor: "pointer" }}
             >
-              ✕
+              ✕ Clear ({activeFilterCount})
             </button>
           )}
+
+          {/* Summary stats */}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 14, fontSize: 11, color: "#64748b", whiteSpace: "nowrap" }}>
+            <span><strong style={{ color: "#1e293b" }}>{stats.shown.toLocaleString()}</strong> rows</span>
+            <span style={{ color: "#16a34a", fontWeight: 600 }}>+{fmt(stats.totalIn, reportingRate)} {reportingCurrency}</span>
+            <span style={{ color: "#dc2626", fontWeight: 600 }}>({fmt(Math.abs(stats.totalOut), reportingRate)}) {reportingCurrency}</span>
+            <span style={{ fontWeight: 700, color: stats.net >= 0 ? "#15803d" : "#b91c1c" }}>
+              Net {stats.net >= 0 ? "+" : ""}{fmt(stats.net, reportingRate)} {reportingCurrency}
+            </span>
+          </div>
         </div>
 
-        {/* Entity */}
-        <Select value={entityFilter} onChange={setEntityFilter}>
-          <option value="All">All entities</option>
-          {ENTITIES.filter(e => e !== "Consolidated").map(e => (
-            <option key={e} value={e}>{e}</option>
-          ))}
-        </Select>
+        {/* Secondary row — date range + amount range */}
+        {moreOpen && (
+          <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50 px-5 py-2">
+            {/* Date from */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 10, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Date</span>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                style={{ height: 28, fontSize: 12, borderRadius: 5, border: "1px solid #e2e8f0", padding: "0 8px", background: "#fff", outline: "none" }}
+              />
+              <span style={{ fontSize: 11, color: "#94a3b8" }}>to</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+                style={{ height: 28, fontSize: 12, borderRadius: 5, border: "1px solid #e2e8f0", padding: "0 8px", background: "#fff", outline: "none" }}
+              />
+              {(dateFrom || dateTo) && (
+                <button onClick={() => { setDateFrom(""); setDateTo(""); }} style={{ fontSize: 11, color: "#94a3b8", background: "none", border: "none", cursor: "pointer" }}>✕</button>
+              )}
+            </div>
 
-        {/* Category */}
-        <Select value={catFilter} onChange={setCatFilter}>
-          <option value="All">All categories</option>
-          {ALL_CATS.map(c => (
-            <option key={c} value={c}>{CAT_LABELS[c] || c}</option>
-          ))}
-        </Select>
+            <div style={{ width: 1, height: 18, background: "#e2e8f0" }} />
 
-        {/* Status toggle */}
-        <div style={{ display: "flex", borderRadius: 6, border: "1px solid #e2e8f0", overflow: "hidden", background: "#f8fafc" }}>
-          {(["all", "active", "excluded"] as StatusFilter[]).map(s => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              style={{
-                height: 30, padding: "0 12px", fontSize: 11, fontWeight: 500,
-                border: "none", cursor: "pointer",
-                background: statusFilter === s ? "#1e293b" : "transparent",
-                color:      statusFilter === s ? "#fff"    : "#64748b",
-              }}
-            >
-              {s.charAt(0).toUpperCase() + s.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        {/* Summary stats */}
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 18, fontSize: 11, color: "#64748b", whiteSpace: "nowrap" }}>
-          <span>
-            <strong style={{ color: "#1e293b" }}>{stats.shown.toLocaleString()}</strong> shown
-          </span>
-          <span style={{ color: "#16a34a" }}>+{fmt(stats.totalIn)}</span>
-          <span style={{ color: "#dc2626" }}>{fmt(Math.abs(stats.totalOut))}</span>
-          <span
-            style={{ fontWeight: 700, color: stats.net >= 0 ? "#15803d" : "#b91c1c" }}
-          >
-            Net {stats.net >= 0 ? "+" : ""}{fmt(stats.net)}
-          </span>
-        </div>
+            {/* Amount range */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 10, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Amount</span>
+              <input
+                type="number"
+                value={amtMin}
+                onChange={e => setAmtMin(e.target.value)}
+                placeholder="Min"
+                style={{ width: 90, height: 28, fontSize: 12, borderRadius: 5, border: "1px solid #e2e8f0", padding: "0 8px", background: "#fff", outline: "none" }}
+              />
+              <span style={{ fontSize: 11, color: "#94a3b8" }}>–</span>
+              <input
+                type="number"
+                value={amtMax}
+                onChange={e => setAmtMax(e.target.value)}
+                placeholder="Max"
+                style={{ width: 90, height: 28, fontSize: 12, borderRadius: 5, border: "1px solid #e2e8f0", padding: "0 8px", background: "#fff", outline: "none" }}
+              />
+              {(amtMin !== "" || amtMax !== "") && (
+                <button onClick={() => { setAmtMin(""); setAmtMax(""); }} style={{ fontSize: 11, color: "#94a3b8", background: "none", border: "none", cursor: "pointer" }}>✕</button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Table ──────────────────────────────────────────────────────────── */}
@@ -566,6 +707,36 @@ export default function TransactionsPage() {
 }
 
 // ─── Small helpers ─────────────────────────────────────────────────────────────
+
+function ToggleGroup({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div style={{ display: "flex", borderRadius: 6, border: "1px solid #e2e8f0", overflow: "hidden", background: "#f8fafc" }}>
+      {options.map(opt => (
+        <button
+          key={opt.value}
+          onClick={() => onChange(opt.value)}
+          style={{
+            height: 30, padding: "0 10px", fontSize: 11, fontWeight: 500,
+            border: "none", borderRight: "1px solid #e2e8f0", cursor: "pointer",
+            background: value === opt.value ? "#1e293b" : "transparent",
+            color:      value === opt.value ? "#fff"    : "#64748b",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function Select({
   value,
