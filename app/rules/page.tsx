@@ -43,8 +43,8 @@ export default function RulesPage() {
     isAdmin, companies, saveRules,
   } = useAppData();
 
-  // Admin: which company's rules are being viewed/edited
-  const [activeEntity, setActiveEntity] = useState<string>("All");
+  // Admin: which company's rules are being viewed/edited (no global "All" tab)
+  const [activeEntity, setActiveEntity] = useState<string>(COMPANY_ENTITIES[0]);
 
   const [search,    setSearch]    = useState("");
   const [catFilter, setCatFilter] = useState("All");
@@ -83,12 +83,10 @@ export default function RulesPage() {
   }, []);   // run once on mount only
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  // Entity tabs show only that company's own rules (isolated per company).
-  // Global admin rules are only visible/editable from the "All Companies" tab.
+  // Each company has fully isolated rules stored in its own row.
   const rulesForEntity = useMemo(() => {
-    if (!isAdmin || activeEntity === "All") return data.rules;
-    const co = companies.find(c => c.entity_name === activeEntity);
-    return co?.data.rules ?? [];
+    if (!isAdmin) return data.rules;
+    return companies.find(c => c.entity_name === activeEntity)?.data.rules ?? [];
   }, [isAdmin, activeEntity, companies, data.rules]);
 
   const sorted = useMemo(
@@ -207,12 +205,14 @@ export default function RulesPage() {
   const saveTarget = isAdmin && activeEntity !== "All" ? activeEntity : undefined;
 
   // Helper: returns the rules array + save target for the current view.
-  // "All Companies" → admin's own row (tgt: undefined)
-  // Entity tab → that company's own row (tgt: activeEntity)
-  const resolveSource = useCallback((_uid?: string) => {
-    if (!isAdmin || activeEntity === "All") return { rules: data.rules, tgt: undefined as string | undefined };
-    const co = companies.find(c => c.entity_name === activeEntity);
-    return { rules: co?.data.rules ?? [], tgt: saveTarget };
+  // Admin always operates on the selected company's own row.
+  // Non-admin operates on their own row (saveTarget = undefined).
+  const resolveSource = useCallback(() => {
+    if (isAdmin) {
+      const co = companies.find(c => c.entity_name === activeEntity);
+      return { rules: co?.data.rules ?? [], tgt: saveTarget };
+    }
+    return { rules: data.rules, tgt: undefined as string | undefined };
   }, [isAdmin, activeEntity, data.rules, companies, saveTarget]);
 
   const handleSave = useCallback(async () => {
@@ -291,18 +291,16 @@ export default function RulesPage() {
       {/* ── Toolbar ────────────────────────────────────────────────────────── */}
       <div className="shrink-0 flex flex-col border-b border-slate-200 bg-white">
 
-        {/* Company tabs — admin only */}
+        {/* Company tabs — admin only (one tab per company, fully isolated) */}
         {isAdmin && companies.length > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 0, borderBottom: "1px solid #f1f5f9", paddingLeft: 20, paddingRight: 20 }}>
-            {[{ label: "All Companies", value: "All" }, ...COMPANY_ENTITIES.map(e => ({ label: e, value: e }))].map(tab => {
-              const isActive = activeEntity === tab.value;
-              const count    = tab.value === "All"
-                ? data.rules.length
-                : (companies.find(c => c.entity_name === tab.value)?.data.rules ?? []).length;
+            {COMPANY_ENTITIES.map(entity => {
+              const isActive = activeEntity === entity;
+              const count    = (companies.find(c => c.entity_name === entity)?.data.rules ?? []).length;
               return (
                 <button
-                  key={tab.value}
-                  onClick={() => setActiveEntity(tab.value)}
+                  key={entity}
+                  onClick={() => setActiveEntity(entity)}
                   style={{
                     height: 36, padding: "0 14px", fontSize: 11, fontWeight: isActive ? 700 : 500,
                     background: "none", border: "none", cursor: "pointer",
@@ -312,7 +310,7 @@ export default function RulesPage() {
                     marginBottom: -1,
                   }}
                 >
-                  {tab.label}
+                  {entity}
                   <span style={{
                     fontSize: 9, fontWeight: 700,
                     background: isActive ? "#dbeafe" : "#f1f5f9",
@@ -324,11 +322,6 @@ export default function RulesPage() {
                 </button>
               );
             })}
-            {activeEntity !== "All" && (
-              <span style={{ marginLeft: "auto", fontSize: 10, color: "#94a3b8", fontStyle: "italic" }}>
-                Rules for <strong style={{ color: "#475569" }}>{activeEntity}</strong> only · global rules managed under <em>All Companies</em>
-              </span>
-            )}
           </div>
         )}
 
