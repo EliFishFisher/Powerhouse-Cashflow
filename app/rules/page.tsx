@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAppData } from "@/hooks/use-app-data";
 import { computeActiveTxns } from "@/lib/cashflow";
 import { applyRule, extractPhrases, suggestCategory } from "@/lib/classify";
@@ -55,6 +56,30 @@ export default function RulesPage() {
   const [saving,      setSaving]      = useState(false);
   const [dismissed,   setDismissed]   = useState<Set<string>>(new Set());
   const [suggestOpen, setSuggestOpen] = useState(true);
+
+  // ── Auto-open from drawer "Turn into rule" link ────────────────────────────
+  const router = useRouter();
+  useEffect(() => {
+    const params  = new URLSearchParams(window.location.search);
+    const keyword = params.get("keyword");
+    const cat     = params.get("cat") as Category | null;
+    if (keyword) {
+      setEditId(null);
+      setKwInput("");
+      setForm({
+        label:    keyword.length > 40 ? keyword.slice(0, 40) : keyword,
+        keywords: [keyword.toLowerCase()],
+        field:    "details" as RuleField,
+        cat:      (cat && (ALL_CATS as readonly string[]).includes(cat)) ? cat : "operating_out",
+        enabled:  true,
+        entities: [],
+      });
+      setPanelOpen(true);
+      // Clean the URL so refreshing doesn't re-open the panel
+      router.replace("/rules");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);   // run once on mount only
 
   // ── Derived ───────────────────────────────────────────────────────────────
   // For admin: look up rules from the targeted company's row directly

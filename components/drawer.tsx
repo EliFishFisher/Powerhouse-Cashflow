@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { fmt } from "@/lib/format";
 import { CAT_LABELS, CAT_COLORS, CAT_BG, ENT_COLOR, ALL_CATS } from "@/lib/constants";
 import type { Category } from "@/lib/constants";
@@ -26,6 +27,7 @@ export function Drawer({
   overrides = {}, onReclassify, onExclude, excluded = new Set(),
   reportingCurrency = "USD", reportingRate = 1,
 }: Props) {
+  const router = useRouter();
   const [selected, setSelected] = useState<Transaction | null>(null);
   const [catDraft,  setCatDraft]  = useState<Category>("other");
   const [saving,    setSaving]    = useState(false);
@@ -207,6 +209,10 @@ export function Drawer({
                 onCatChange={setCatDraft}
                 onSave={handleSaveCat}
                 onExclude={handleExclude}
+                onCreateRule={(keyword, cat) => {
+                  onClose();
+                  router.push(`/rules?keyword=${encodeURIComponent(keyword)}&cat=${encodeURIComponent(cat)}`);
+                }}
               />}
             </div>
 
@@ -221,7 +227,7 @@ export function Drawer({
 function TxnDetail({
   txn, effCat, saving, isExcluded, canEdit, canExclude,
   reportingCurrency, reportingRate,
-  onBack, onCatChange, onSave, onExclude,
+  onBack, onCatChange, onSave, onExclude, onCreateRule,
 }: {
   txn:               Transaction;
   effCat:            Category;
@@ -235,6 +241,7 @@ function TxnDetail({
   onCatChange:       (c: Category) => void;
   onSave:            () => void;
   onExclude:         () => void;
+  onCreateRule:      (keyword: string, cat: Category) => void;
 }) {
   const ck = effCat === "intercompany" ? (txn.net > 0 ? "intercompany_in" : "intercompany_out") : effCat;
 
@@ -390,6 +397,16 @@ function TxnDetail({
             }}
           >
             {isExcluded ? "✓ Restore transaction" : "Exclude from cashflow"}
+          </button>
+        )}
+
+        {/* Turn this override into a persistent classification rule */}
+        {txn.details && (
+          <button
+            onClick={() => onCreateRule(txn.details, effCat)}
+            className="w-full rounded-lg border border-blue-200 bg-blue-50 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
+          >
+            ⚡ Turn into a classification rule
           </button>
         )}
 
