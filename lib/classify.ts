@@ -13,7 +13,8 @@ export const CAT_KEYWORDS: { cat: Category; words: string[] }[] = [
   { cat: "op_professional", words: ["legal","audit","accounting","consulting","counsel","lawyer","attorney","notary","cpa","kpmg","deloitte","pwc","ey ","advisory","law firm","advocate","accountant"] },
   { cat: "op_regulatory",   words: ["fda","ce mark","iso ","regulatory","patent","trademark","intellectual property"," ip ","registration","mdr","510k","ce certification","notified body"] },
   { cat: "op_rent",         words: ["rent","שכר דירה","שכירות","lease","landlord","property","דמי שכירות","house","warehouse","space rental","workspace"] },
-  { cat: "op_office",       words: ["office","utilities","electricity","water","cleaning","maintenance","facility","building","insurance","postage","courier","fedex","dhl","amazon","printing","stationery"] },
+  { cat: "op_utilities",    words: ["electricity","electric","water","gas","internet","broadband","telephone","phone bill","utility","utilities","חשמל","מים","גז","ארנונה","municipal","sewage","waste","trash","heating","cooling","energy"] },
+  { cat: "op_office",       words: ["office","cleaning","maintenance","facility","building","insurance","postage","courier","fedex","dhl","amazon","printing","stationery"] },
   { cat: "op_it",           words: ["software","saas","subscription","aws","azure","google cloud","microsoft","zoom","slack","github","license","hosting","it support","jira","salesforce","hubspot","domain"] },
   { cat: "op_travel",       words: ["travel","flight","hotel","accommodation","conference","airbnb","taxi","uber","transport","per diem","meal","restaurant","airport","train","car rental"] },
   // Generic operating fallback
@@ -48,9 +49,11 @@ export function reclassifyOp(t: Transaction): Category {
     const match = CAT_KEYWORDS.find(r => r.cat.startsWith("op_") && r.words.some(w => text.includes(w)));
     return match ? match.cat : "operating_out";
   }
-  // op_office: check if it should actually be op_rent
+  // op_office: check if it should be upgraded to op_rent or op_utilities
   const rentRule = CAT_KEYWORDS.find(r => r.cat === "op_rent");
   if (rentRule && rentRule.words.some(w => text.includes(w))) return "op_rent";
+  const utilRule = CAT_KEYWORDS.find(r => r.cat === "op_utilities");
+  if (utilRule && utilRule.words.some(w => text.includes(w))) return "op_utilities";
   return t.cat;
 }
 
