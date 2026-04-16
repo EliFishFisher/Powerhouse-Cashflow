@@ -23,7 +23,7 @@ export default function CashflowPage() {
   const [drawer,      setDrawer]      = useState<DrawerState | null>(null);
   const [inflowOpen,  setInflowOpen]  = useState(true);
   const [outflowOpen, setOutflowOpen] = useState(true);
-  const [opSubOpen,   setOpSubOpen]   = useState(false);
+  const [opSubOpen,   setOpSubOpen]   = useState(true);
   const [adjOpen,     setAdjOpen]     = useState(false);
   const [reconDismissed, setReconDismissed] = useState(false);
   const [adjForm, setAdjForm] = useState({
@@ -428,15 +428,19 @@ export default function CashflowPage() {
                       return <TotCell key={i} v={total} week={d.week} cat="operating_out" label="Operating Payments" isOut />;
                     })}
                   </tr>
-                  {opSubOpen && OP_SUBCATS.map(cat => (
-                    <tr key={cat} style={{ borderBottom:"1px solid #f8fafc", background:"#fffbf5" }}
-                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background="#fff3e0"}
-                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background="#fffbf5"}>
-                      <Lbl indent={3}><span style={{ width:2, height:8, borderRadius:2, background:CAT_COLORS[cat]||"#f59e0b", flexShrink:0 }} /><span style={{ fontSize:9.5, color:"#92400e" }}>{CAT_LABELS[cat]}</span></Lbl>
-                      {displayDerived.map((d,i) => <C key={i} v={d.derived[cat]||0} week={d.week} cat={cat} label={CAT_LABELS[cat]||cat} />)}
-                    </tr>
-                  ))}
-                  {opSubOpen && (
+                  {opSubOpen && OP_SUBCATS.map(cat => {
+                    const hasData = displayDerived.some(d => (d.derived[cat] || 0) !== 0);
+                    if (!hasData) return null;
+                    return (
+                      <tr key={cat} style={{ borderBottom:"1px solid #f8fafc", background:"#fffbf5" }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background="#fff3e0"}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background="#fffbf5"}>
+                        <Lbl indent={3}><span style={{ width:2, height:8, borderRadius:2, background:CAT_COLORS[cat]||"#f59e0b", flexShrink:0 }} /><span style={{ fontSize:9.5, color:"#92400e" }}>{CAT_LABELS[cat]}</span></Lbl>
+                        {displayDerived.map((d,i) => <C key={i} v={d.derived[cat]||0} week={d.week} cat={cat} label={CAT_LABELS[cat]||cat} />)}
+                      </tr>
+                    );
+                  })}
+                  {opSubOpen && displayDerived.some(d => (d.derived.operating_out || 0) !== 0) && (
                     <tr style={{ borderBottom:"1px solid #f8fafc", background:"#fffbf5" }}>
                       <Lbl indent={3}><span style={{ width:2, height:8, borderRadius:2, background:"#94a3b8", flexShrink:0 }} /><span style={{ fontSize:9.5, color:"#92400e" }}>Other Operating</span></Lbl>
                       {displayDerived.map((d,i) => <C key={i} v={d.derived.operating_out||0} week={d.week} cat="operating_out" label="Other Operating" />)}

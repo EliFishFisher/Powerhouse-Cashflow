@@ -82,11 +82,22 @@ export default function RulesPage() {
   }, []);   // run once on mount only
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  // For admin: look up rules from the targeted company's row directly
+  // For admin: rules that apply to the selected entity.
+  // This includes:
+  //   1. Global rules (entities:[]) in the admin's own row
+  //   2. Admin's row rules scoped to this entity (entities:["Orange Space"])
+  //   3. Rules stored in the company's own row (created while on that tab)
   const rulesForEntity = useMemo(() => {
     if (!isAdmin || activeEntity === "All") return data.rules;
     const co = companies.find(c => c.entity_name === activeEntity);
-    return co?.data.rules ?? [];
+    const companyRules = co?.data.rules ?? [];
+    // Admin's rules that apply to this entity (global or entity-scoped)
+    const adminApplicable = data.rules.filter(
+      r => (r.entities ?? []).length === 0 || (r.entities ?? []).includes(activeEntity),
+    );
+    // Merge, deduplicating by uid (company row rules take precedence)
+    const seen = new Set(companyRules.map(r => r.uid));
+    return [...companyRules, ...adminApplicable.filter(r => !seen.has(r.uid))];
   }, [isAdmin, activeEntity, companies, data.rules]);
 
   const sorted = useMemo(
@@ -278,7 +289,15 @@ export default function RulesPage() {
               const isActive = activeEntity === tab.value;
               const count    = tab.value === "All"
                 ? data.rules.length
-                : (companies.find(c => c.entity_name === tab.value)?.data.rules ?? []).length;
+                : (() => {
+                    const co = companies.find(c => c.entity_name === tab.value);
+                    const companyRules = co?.data.rules ?? [];
+                    const adminApplicable = data.rules.filter(
+                      r => (r.entities ?? []).length === 0 || (r.entities ?? []).includes(tab.value),
+                    );
+                    const seen = new Set(companyRules.map(r => r.uid));
+                    return companyRules.length + adminApplicable.filter(r => !seen.has(r.uid)).length;
+                  })();
               return (
                 <button
                   key={tab.value}
