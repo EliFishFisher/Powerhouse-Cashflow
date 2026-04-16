@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useAppData } from "@/hooks/use-app-data";
 import { computeActiveTxns } from "@/lib/cashflow";
 import { fmt } from "@/lib/format";
@@ -12,6 +13,7 @@ import {
   ENT_COLOR,
   ENTITIES,
 } from "@/lib/constants";
+import { extractWords } from "@/lib/classify";
 import type { Category } from "@/lib/constants";
 
 type SortCol = "date" | "amount" | "entity";
@@ -47,6 +49,16 @@ export default function TransactionsPage() {
   const [sortDir,       setSortDir]       = useState<"asc" | "desc">("desc");
   const [overrideOpen,  setOverrideOpen]  = useState<string | null>(null);
   const [moreOpen,      setMoreOpen]      = useState(false);
+  const [expandedUid,   setExpandedUid]   = useState<string | null>(null);
+  const [catDraft,      setCatDraft]      = useState<Category>("other");
+
+  const router = useRouter();
+
+  const openExpand = useCallback((uid: string, cat: Category) => {
+    setExpandedUid(prev => prev === uid ? null : uid);
+    setCatDraft(cat);
+    setOverrideOpen(null);
+  }, []);
 
   // ── All raw rows (transactions + adjustments) ─────────────────────────────
   const allRaw = useMemo(
@@ -409,37 +421,35 @@ export default function TransactionsPage() {
                       ? "intercompany_in"
                       : "intercompany_out"
                     : t.cat;
-                const isExcl = t.isExcluded;
-                const evenBg = i % 2 === 0 ? "#fff" : "#fafbfd";
+                const isExcl    = t.isExcluded;
+                const isExpanded = expandedUid === t.uid;
+                const evenBg    = i % 2 === 0 ? "#fff" : "#fafbfd";
 
                 return (
+                  <React.Fragment key={`${t.uid}-row`}>
                   <tr
-                    key={`${t.uid}-${i}`}
+                    onClick={() => openExpand(t.uid, t.cat)}
                     style={{
-                      background: isExcl ? "#f1f5f9" : evenBg,
-                      opacity: isExcl ? 0.5 : 1,
-                      borderBottom: "1px solid #f0f4f8",
+                      background: isExpanded ? "#eff6ff" : isExcl ? "#f1f5f9" : evenBg,
+                      opacity: isExcl ? 0.55 : 1,
+                      borderBottom: isExpanded ? "none" : "1px solid #f0f4f8",
                       transition: "background 0.1s",
+                      cursor: "pointer",
                     }}
                     onMouseEnter={e => {
-                      if (!isExcl)
+                      if (!isExpanded)
                         (e.currentTarget as HTMLElement).style.background = "#eff6ff";
                     }}
                     onMouseLeave={e => {
-                      (e.currentTarget as HTMLElement).style.background = isExcl
-                        ? "#f1f5f9"
-                        : evenBg;
+                      if (!isExpanded)
+                        (e.currentTarget as HTMLElement).style.background = isExcl ? "#f1f5f9" : evenBg;
                     }}
                   >
-                    {/* Flag */}
-                    <td style={{ padding: "0 4px", textAlign: "center" }}>
+                    {/* Expand chevron */}
+                    <td style={{ padding: "0 4px", textAlign: "center", width: 28 }}>
+                      <span style={{ fontSize: 10, color: "#94a3b8", display: "inline-block", transition: "transform 0.15s", transform: isExpanded ? "rotate(90deg)" : "rotate(0)" }}>›</span>
                       {t.isAdjustment && (
-                        <span
-                          title="Manual adjustment"
-                          style={{ fontSize: 8, fontWeight: 800, color: "#8b5cf6", letterSpacing: "0.03em" }}
-                        >
-                          ADJ
-                        </span>
+                        <span title="Manual adjustment" style={{ display: "block", fontSize: 7, fontWeight: 800, color: "#8b5cf6" }}>ADJ</span>
                       )}
                     </td>
 
@@ -493,9 +503,10 @@ export default function TransactionsPage() {
                     {/* Category badge + override dropdown */}
                     <td style={{ padding: "6px 8px", position: "relative" }}>
                       <button
-                        onClick={() =>
-                          setOverrideOpen(overrideOpen === t.uid ? null : t.uid)
-                        }
+                        onClick={e => {
+                          e.stopPropagation();
+                          setOverrideOpen(overrideOpen === t.uid ? null : t.uid);
+                        }}
                         title={
                           overrides[t.uid]
                             ? "Override active — click to change"
@@ -652,7 +663,7 @@ export default function TransactionsPage() {
                     {/* Exclude toggle */}
                     <td style={{ padding: "7px 6px", textAlign: "center" }}>
                       <button
-                        onClick={() => toggleExclude(t.uid)}
+                        onClick={e => { e.stopPropagation(); toggleExclude(t.uid); }}
                         title={isExcl ? "Re-include in cashflow" : "Exclude from cashflow"}
                         style={{
                           border: "none", background: "none", cursor: "pointer",
@@ -674,6 +685,117 @@ export default function TransactionsPage() {
                       </button>
                     </td>
                   </tr>
+
+                  {/* ── Expansion panel ────────────────────────────────────── */}
+                  {isExpanded && (
+                    <tr key={`${t.uid}-expand`}>
+                      <td colSpan={11} style={{ padding: 0, background: "#eff6ff", borderBottom: "2px solid #bae6fd" }}>
+                        <div style={{ padding: "14px 20px 16px 44px", display: "flex", flexWrap: "wrap", gap: 24 }}>
+
+                          {/* ── Detail fields ──────────────────────────────── */}
+                          <div style={{ flex: "1 1 340px", minWidth: 0 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Transaction Detail</div>
+                            <table style={{ fontSize: 12, borderCollapse: "collapse", width: "100%" }}>
+                              <tbody>
+                                {[
+                                  ["Date",        t.date],
+                                  ["Entity",      t.entity],
+                                  ["Account",     t.account],
+                                  ["Description", t.details],
+                                  ["Contra",      t.contra],
+                                  ["Ref / No.",   t.journalNo],
+                                  ["Currency",    t.currency],
+                                  ["Debit",       t.debit  > 0 ? fmt(t.debit)  : "—"],
+                                  ["Credit",      t.credit > 0 ? fmt(t.credit) : "—"],
+                                  ["Net USD",     `${t.net > 0 ? "+" : ""}${fmt(t.net)}`],
+                                ].filter(([, v]) => v).map(([label, value]) => (
+                                  <tr key={label as string}>
+                                    <td style={{ padding: "2px 10px 2px 0", color: "#94a3b8", fontWeight: 600, whiteSpace: "nowrap", width: 90 }}>{label}</td>
+                                    <td style={{ padding: "2px 0", color: "#1e293b" }}>{value}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* ── Actions ────────────────────────────────────── */}
+                          <div style={{ flex: "0 0 240px", display: "flex", flexDirection: "column", gap: 12 }}>
+
+                            {/* Category override */}
+                            <div>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Reassign Category</div>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <select
+                                  value={catDraft}
+                                  onChange={e => setCatDraft(e.target.value as Category)}
+                                  style={{ flex: 1, height: 30, fontSize: 12, borderRadius: 6, border: "1px solid #bae6fd", padding: "0 8px", background: "#fff", cursor: "pointer" }}
+                                >
+                                  {ALL_CATS.filter(c => c !== "fx_conversion").map(c => (
+                                    <option key={c} value={c}>{CAT_LABELS[c] || c}</option>
+                                  ))}
+                                </select>
+                                <button
+                                  onClick={() => { setCatOverride(t.uid, catDraft); setExpandedUid(null); }}
+                                  style={{ height: 30, padding: "0 12px", fontSize: 11, fontWeight: 600, borderRadius: 6, border: "none", background: "#2563eb", color: "#fff", cursor: "pointer", whiteSpace: "nowrap" }}
+                                >
+                                  Save
+                                </button>
+                              </div>
+                              {overrides[t.uid] && (
+                                <button
+                                  onClick={() => removeCatOverride(t.uid)}
+                                  style={{ marginTop: 4, fontSize: 10, color: "#ef4444", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                                >
+                                  ✕ Remove override
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Exclude / restore */}
+                            <div>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Visibility</div>
+                              <button
+                                onClick={() => toggleExclude(t.uid)}
+                                style={{
+                                  height: 30, padding: "0 12px", fontSize: 11, fontWeight: 600,
+                                  borderRadius: 6, cursor: "pointer", whiteSpace: "nowrap",
+                                  border: isExcl ? "1.5px solid #16a34a" : "1.5px solid #ef4444",
+                                  background: isExcl ? "#f0fdf4" : "#fef2f2",
+                                  color: isExcl ? "#16a34a" : "#ef4444",
+                                }}
+                              >
+                                {isExcl ? "👁 Restore to cashflow" : "⊘ Exclude from cashflow"}
+                              </button>
+                            </div>
+
+                            {/* Turn into rule */}
+                            <div>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Classify Similar</div>
+                              {(() => {
+                                // Use the shared stop-word-filtered extractor for a meaningful keyword
+                                const words = extractWords(t);
+                                const kw = words[0] ?? (t.details ?? "").split(/\s+/)[0] ?? "";
+                                return (
+                                  <button
+                                    onClick={() => router.push(`/rules?keyword=${encodeURIComponent(kw)}&cat=${encodeURIComponent(t.cat)}`)}
+                                    style={{
+                                      height: 30, padding: "0 12px", fontSize: 11, fontWeight: 600,
+                                      borderRadius: 6, cursor: "pointer", whiteSpace: "nowrap",
+                                      border: "1.5px solid #7c3aed", background: "#f5f3ff", color: "#7c3aed",
+                                    }}
+                                  >
+                                    ⚡ Turn into a rule
+                                  </button>
+                                );
+                              })()}
+                            </div>
+
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })
             )}
