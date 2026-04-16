@@ -39,18 +39,52 @@ export default function CashflowPage() {
     [data.transactions, data.adjustments, excluded, overrides, data.rules, fxRates]
   );
 
+  // Whether the current view is read-only (Consolidated = never edit)
+  const isConsolidated = entity === "Consolidated";
+
+  // Set of entity names that match the selected view.
+  // Parent entity includes its subsidiaries; null = all (Consolidated).
+  const entitySet = useMemo(() => {
+    if (entity === "Consolidated") return null;
+    const childSubs = data.subsidiaries
+      .filter(s => s.parentEntity === entity)
+      .map(s => s.name);
+    return new Set([entity, ...childSubs]);
+  }, [entity, data.subsidiaries]);
+
+  // Dynamic entity option list: Consolidated + parents with data + their subs with data
+  const entityOptions = useMemo(() => {
+    const txnEntities = new Set(activeTxns.map(t => t.entity));
+    const result: { name: string; isSub: boolean; parent?: string }[] = [
+      { name: "Consolidated", isSub: false },
+    ];
+    for (const parent of ENTITIES.filter(e => e !== "Consolidated")) {
+      if (txnEntities.has(parent)) result.push({ name: parent, isSub: false });
+      data.subsidiaries
+        .filter(s => s.parentEntity === parent && txnEntities.has(s.name))
+        .forEach(s => result.push({ name: s.name, isSub: true, parent }));
+    }
+    return result;
+  }, [activeTxns, data.subsidiaries]);
+
   const weeks = useMemo(() => [...new Set(activeTxns.map(t => t.week))].sort(), [activeTxns]);
 
-  const derived = useMemo(() => buildDerived(activeTxns, entity, weeks), [activeTxns, entity, weeks]);
+  // Entity-filtered txns (subsidiary-aware): used for derived, bank, and drawer
+  const entityTxns = useMemo(() =>
+    entitySet ? activeTxns.filter(t => entitySet.has(t.entity)) : activeTxns,
+    [activeTxns, entitySet]
+  );
+
+  const derived = useMemo(() => buildDerived(entityTxns, "Consolidated", weeks), [entityTxns, weeks]);
 
   const bankDerived = useMemo(() => {
     const raw = [...data.transactions, ...data.adjustments];
-    const sub = entity === "Consolidated" ? raw : raw.filter(t => t.entity === entity);
+    const sub = entitySet ? raw.filter(t => entitySet.has(t.entity)) : raw;
     return addBalances(weeks.map(w => ({
       week: w, cats: {},
       net: sub.filter(t => t.week === w).reduce((s, t) => s + t.net, 0),
     })), 0);
-  }, [data.transactions, data.adjustments, entity, weeks]);
+  }, [data.transactions, data.adjustments, entitySet, weeks]);
 
   const displayDerived = useMemo(() => groupDerived(derived, viewPeriod), [derived, viewPeriod]);
   const displayBank    = useMemo(() => groupBank(bankDerived, weeks, viewPeriod), [bankDerived, weeks, viewPeriod]);
@@ -69,7 +103,7 @@ export default function CashflowPage() {
     const { week, cat } = drawer;
     return activeTxns.filter(t => {
       const mW = viewPeriod === "weekly" ? t.week === week : getPeriodKey(t.week, viewPeriod) === week;
-      const mE = entity === "Consolidated" ? true : t.entity === entity;
+      const mE = entitySet ? entitySet.has(t.entity) : true;
       const mC = (() => {
         if (t.cat === "fx_conversion") return false;
         if (cat === "intercompany_in")  return t.cat === "intercompany" && t.net > 0;
@@ -201,15 +235,24 @@ export default function CashflowPage() {
           <div className="flex shrink-0 flex-wrap items-center gap-2.5 border-b border-slate-200 bg-white px-5 py-2">
             <div className="relative">
               <button onClick={() => setDropOpen(!dropOpen)} className="flex items-center gap-1.5 rounded border-[1.5px] border-blue-500 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-800">
-                <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: ENT_COLOR[entity] }} />{entity}<span className="text-[8px]">▾</span>
+                <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: ENT_COLOR[entity] ?? "#94a3b8" }} />{entity}<span className="text-[8px]">▾</span>
               </button>
               {dropOpen && (
-                <div className="absolute left-0 top-[calc(100%+3px)] z-50 min-w-[200px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
-                  {ENTITIES.map(e => (
-                    <div key={e} onClick={() => { setEntity(e); setDropOpen(false); }}
+                <div className="absolute left-0 top-[calc(100%+3px)] z-50 min-w-[220px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+                  {entityOptions.map(opt => (
+                    <div key={opt.name} onClick={() => { setEntity(opt.name); setDropOpen(false); }}
                       className="flex cursor-pointer items-center gap-2 border-b border-slate-50 px-3.5 py-2 text-xs hover:bg-slate-50"
-                      style={{ fontWeight: e === entity ? 600 : 400, color: e === entity ? "#1d4ed8" : "#374151", background: e === entity ? "#eff6ff" : undefined }}>
-                      <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: ENT_COLOR[e] }} />{e}
+                      style={{
+                        paddingLeft: opt.isSub ? 24 : 14,
+                        fontWeight: opt.name === entity ? 600 : 400,
+                        color: opt.name === entity ? "#1d4ed8" : opt.isSub ? "#64748b" : "#374151",
+                        background: opt.name === entity ? "#eff6ff" : undefined,
+                      }}>
+                      {opt.isSub
+                        ? <span className="text-[9px] font-bold text-purple-500">↳</span>
+                        : <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: ENT_COLOR[opt.name] ?? "#94a3b8" }} />}
+                      {opt.name}
+                      {opt.isSub && <span className="ml-auto text-[9px] text-slate-400">{opt.parent}</span>}
                     </div>
                   ))}
                 </div>
@@ -231,11 +274,18 @@ export default function CashflowPage() {
               {displayDerived.length} {viewPeriod==="weekly"?"week":viewPeriod==="monthly"?"month":viewPeriod==="quarterly"?"quarter":"year"}{displayDerived.length!==1?"s":""}
             </span>
             {excluded.size > 0 && <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700">⛔ {excluded.size} excluded</span>}
+            {isConsolidated && (
+              <span className="rounded border border-slate-300 bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                🔒 Read-only — select a company to edit
+              </span>
+            )}
             <div className="flex-1" />
             <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-400">💡 Click any cell to drill into transactions</span>
-            <button onClick={() => setAdjOpen(o => !o)} className="flex items-center gap-1.5 rounded border border-amber-400 bg-white px-3 py-1 text-xs font-bold text-amber-700 hover:bg-amber-50">
-              ✏️ Add Adjustment {adjOpen ? "▲" : "▼"}
-            </button>
+            {!isConsolidated && (
+              <button onClick={() => setAdjOpen(o => !o)} className="flex items-center gap-1.5 rounded border border-amber-400 bg-white px-3 py-1 text-xs font-bold text-amber-700 hover:bg-amber-50">
+                ✏️ Add Adjustment {adjOpen ? "▲" : "▼"}
+              </button>
+            )}
           </div>
 
           {/* Adjustment panel */}
@@ -457,7 +507,8 @@ export default function CashflowPage() {
         title={drawer?.title||""} weekLabel={drawer?periodLabel(drawer.week,viewPeriod):""} entity={entity}
         overrides={overrides} excluded={excluded}
         reportingCurrency={reportingCurrency} reportingRate={reportingRate}
-        onReclassify={setCatOverride} onExclude={toggleExclude} />
+        onReclassify={isConsolidated ? undefined : setCatOverride}
+        onExclude={isConsolidated ? undefined : toggleExclude} />
     </div>
   );
 }

@@ -35,8 +35,11 @@ export function FileLoader({
     added: number; dupes: number; total: number; errors: string[]; step?: string;
   } | null>(null);
 
-  const processFiles = useCallback(async (files: File[], entityOverride?: string) => {
-    const entity = entityOverride ?? targetEntity;
+  // entityTag  = what goes into t.entity on each transaction (subsidiary name or parent)
+  // saveTarget = which app_data row to write to (always the parent entity for subs)
+  const processFiles = useCallback(async (files: File[], entityTag?: string, saveTarget?: string) => {
+    const entity = entityTag ?? targetEntity;
+    const saveEntity = saveTarget ?? entityTag ?? targetEntity;
     setLoading(true);
     setStatus({ added: 0, dupes: 0, total: 0, errors: [], step: `Reading ${files.length} file(s)…` });
 
@@ -96,7 +99,7 @@ export function FileLoader({
       if (allNew.length === 0 && allBals.length > 0) {
         setStatus({ added: 0, dupes: 0, total: 0, errors });
         setLoading(false);
-        setPendingBals({ balances: allBals, entity });
+        setPendingBals({ balances: allBals, entity: saveEntity });
         return;
       }
 
@@ -107,12 +110,14 @@ export function FileLoader({
       setStatus({ added: 0, dupes: 0, total: 0, errors, step: `Parsed ${allNew.length} rows — deduplicating…` });
 
       if (isAdmin && entity) {
+        // Tag every transaction with the chosen entity (may be a subsidiary name)
         allNew = allNew.map(t => ({ ...t, entity }));
       }
 
       let baseTxns = transactions;
-      if (isAdmin && entity) {
-        const company = companies.find(c => c.entity_name === entity);
+      if (isAdmin && saveEntity) {
+        // Base existing txns from the parent company's row (where all subs are stored)
+        const company = companies.find(c => c.entity_name === saveEntity);
         baseTxns = company?.data.transactions ?? [];
       }
 
@@ -124,17 +129,17 @@ export function FileLoader({
         totalTxns: merged.length,
       };
 
-      const saveEntity = isAdmin ? entity : undefined;
+      const apiTarget = isAdmin ? saveEntity : undefined;
       setStatus({ added, dupes, total: merged.length, errors, step: `Saving ${merged.length} transactions…` });
 
-      await apiClient.saveTransactions(merged, saveEntity);
-      await apiClient.saveMeta(newMeta, saveEntity);
+      await apiClient.saveTransactions(merged, apiTarget);
+      await apiClient.saveMeta(newMeta, apiTarget);
 
       setStatus({ added, dupes, total: merged.length, errors });
 
       // Show balance modal alongside the success status if balance reports also found
       if (allBals.length > 0) {
-        setPendingBals({ balances: allBals, entity });
+        setPendingBals({ balances: allBals, entity: saveEntity });
       }
 
       await new Promise(r => setTimeout(r, 1500));
@@ -204,22 +209,25 @@ export function FileLoader({
             <p className="text-xs text-slate-400 mb-4">{pendingFiles.length} file{pendingFiles.length !== 1 ? "s" : ""} selected</p>
             <div className="flex flex-col gap-2 max-h-72 overflow-y-auto">
               {entityList.map(e => {
-                const isSub = subsidiaries.some(s => s.name === e);
+                const sub = subsidiaries.find(s => s.name === e);
+                const isSub = !!sub;
                 return (
                   <button key={e}
                     onClick={() => {
                       setTargetEntity(e);
-                      const files = pendingFiles;
+                      const files = pendingFiles!;
                       setPendingFiles(null);
-                      // For subsidiaries, resolve to parent for saving
-                      const saveTarget = isSub
-                        ? (subsidiaries.find(s => s.name === e)?.parentEntity ?? e)
-                        : e;
-                      processFiles(files, saveTarget);
+                      if (isSub && sub) {
+                        // Tag with subsidiary name; save to parent's app_data row
+                        processFiles(files, sub.name, sub.parentEntity);
+                      } else {
+                        processFiles(files, e, e);
+                      }
                     }}
                     className="rounded-lg px-4 py-2.5 text-sm font-semibold bg-slate-100 hover:bg-blue-600 hover:text-white transition-colors text-slate-700 text-left flex items-center gap-2">
                     {isSub && <span className="text-[10px] bg-purple-100 text-purple-600 px-1.5 rounded font-bold">SUB</span>}
                     {e}
+                    {isSub && <span className="text-[9px] text-slate-400 ml-auto">{sub.parentEntity}</span>}
                   </button>
                 );
               })}
