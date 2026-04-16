@@ -65,6 +65,7 @@ export function buildWeekly(
       op_rd:           sum("op_rd"),
       op_professional: sum("op_professional"),
       op_regulatory:   sum("op_regulatory"),
+      op_rent:         sum("op_rent"),
       op_office:       sum("op_office"),
       op_it:           sum("op_it"),
       op_travel:       sum("op_travel"),
@@ -107,6 +108,7 @@ export function buildDerived(
       op_rd:            r.cats.op_rd           < 0 ? r.cats.op_rd           : 0,
       op_professional:  r.cats.op_professional < 0 ? r.cats.op_professional : 0,
       op_regulatory:    r.cats.op_regulatory   < 0 ? r.cats.op_regulatory   : 0,
+      op_rent:          r.cats.op_rent         < 0 ? r.cats.op_rent         : 0,
       op_office:        r.cats.op_office       < 0 ? r.cats.op_office       : 0,
       op_it:            r.cats.op_it           < 0 ? r.cats.op_it           : 0,
       op_travel:        r.cats.op_travel       < 0 ? r.cats.op_travel       : 0,
@@ -115,7 +117,7 @@ export function buildDerived(
     };
     const opSubTotal =
       d.op_rd + d.op_professional + d.op_regulatory +
-      d.op_office + d.op_it + d.op_travel;
+      d.op_rent + d.op_office + d.op_it + d.op_travel;
 
     return {
       ...r,
@@ -139,7 +141,7 @@ export function groupDerived(derived: DerivedRow[], period: ViewPeriod): Derived
 
   const DCATS = [
     "financing_in","grant","intercompany_in","salary","operating_out",
-    "op_rd","op_professional","op_regulatory","op_office","op_it","op_travel",
+    "op_rd","op_professional","op_regulatory","op_rent","op_office","op_it","op_travel",
     "bank_charges","intercompany_out",
   ];
 

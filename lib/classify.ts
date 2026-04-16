@@ -40,10 +40,18 @@ export function classify(cat: string, details: string): Category {
 // ─── RUNTIME RE-CLASSIFIER ────────────────────────────────────────────────────
 // Upgrades stored operating_out → subcategory by keyword (non-destructive)
 export function reclassifyOp(t: Transaction): Category {
-  if (t.cat !== "operating_out") return t.cat;
+  // Upgrade operating_out → subcategory, and op_office → op_rent if description matches
+  // (handles transactions uploaded before op_rent existed as a separate category)
+  if (t.cat !== "operating_out" && t.cat !== "op_office") return t.cat;
   const text = `${t.details || ""} ${t.contra || ""} ${t.account || ""}`.toLowerCase();
-  const match = CAT_KEYWORDS.find(r => r.cat.startsWith("op_") && r.words.some(w => text.includes(w)));
-  return match ? match.cat : "operating_out";
+  if (t.cat === "operating_out") {
+    const match = CAT_KEYWORDS.find(r => r.cat.startsWith("op_") && r.words.some(w => text.includes(w)));
+    return match ? match.cat : "operating_out";
+  }
+  // op_office: check if it should actually be op_rent
+  const rentRule = CAT_KEYWORDS.find(r => r.cat === "op_rent");
+  if (rentRule && rentRule.words.some(w => text.includes(w))) return "op_rent";
+  return t.cat;
 }
 
 // ─── APPLY A CLASSIFICATION RULE ─────────────────────────────────────────────
