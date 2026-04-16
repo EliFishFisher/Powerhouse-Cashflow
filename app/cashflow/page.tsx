@@ -111,6 +111,7 @@ export default function CashflowPage() {
         if (cat === "all_in")           return t.net > 0;
         if (cat === "all_out")          return t.net < 0;
         if (cat === "operating_out")    return t.cat === "operating_out" || (OP_SUBCATS as readonly string[]).includes(t.cat);
+        if (cat === "op_other_only")    return t.cat === "operating_out";   // un-subcategorised only
         return t.cat === cat;
       })();
       return mW && mE && mC;
@@ -443,7 +444,7 @@ export default function CashflowPage() {
                   {opSubOpen && displayDerived.some(d => (d.derived.operating_out || 0) !== 0) && (
                     <tr style={{ borderBottom:"1px solid #f8fafc", background:"#fffbf5" }}>
                       <Lbl indent={3}><span style={{ width:2, height:8, borderRadius:2, background:"#94a3b8", flexShrink:0 }} /><span style={{ fontSize:9.5, color:"#92400e" }}>Other Operating</span></Lbl>
-                      {displayDerived.map((d,i) => <C key={i} v={d.derived.operating_out||0} week={d.week} cat="operating_out" label="Other Operating" />)}
+                      {displayDerived.map((d,i) => <C key={i} v={d.derived.operating_out||0} week={d.week} cat="op_other_only" label="Other Operating" />)}
                     </tr>
                   )}
 
